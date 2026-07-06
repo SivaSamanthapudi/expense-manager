@@ -1,0 +1,31 @@
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.person-card { display: flex; flex-direction: column; gap: 12px; }
+
+.person-header { display: flex; align-items: center; gap: 12px; }
+.person-info { min-width: 0; }
+
+.person-groups { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.person-group-chip {
+  padding: 3px 10px;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.person-group-chip:hover { background: #c7d2fe; }
+
+.person-stats {
+  display: flex;
+  justify-content: space-between;
+}
+
+.person-stat { text-align: center; }
