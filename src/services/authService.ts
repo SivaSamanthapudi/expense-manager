@@ -2,13 +2,14 @@ import { apiClient } from './apiClient';
 import { AuthUser } from '../types';
 
 export interface LoginPayload {
-  email: string;
+  identifier: string;
   password: string;
 }
 
 export interface SignupPayload {
   name: string;
-  email: string;
+  email?: string;
+  mobile?: string;
   password: string;
 }
 
@@ -53,3 +54,4 @@ export const authService = {
     return data;
   },
 };
+  

@@ -21,7 +21,8 @@ export const EXPENSE_CATEGORIES = Object.values(ExpenseCategory);
 export interface AuthUser {
   id: string;
   name: string;
-  email: string;
+  email?: string;
+  mobile?: string;
   avatar: string;
 }
 
@@ -62,4 +63,5 @@ export interface Expense {
   splits: ExpenseSplit[];
   date: string;
   notes: string;
+  receiptUrls?: string[];
 }

@@ -4,7 +4,7 @@ export const TOKEN_KEY = 'auth_token';
 export const REFRESH_TOKEN_KEY = 'auth_refresh_token';
 
 export const apiClient = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:4000/api',
+  baseURL: process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:3000/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -53,7 +53,7 @@ apiClient.interceptors.response.use(
       if (!refreshToken) throw new Error('No refresh token');
 
       const { data } = await axios.post(
-        `${process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:4000/api'}/auth/refresh`,
+        `${process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:3000/api'}/auth/refresh`,
         { refreshToken },
       );
 

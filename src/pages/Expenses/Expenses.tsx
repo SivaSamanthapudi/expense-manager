@@ -4,6 +4,7 @@ import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
 import { EXPENSE_CATEGORIES, ExpenseCategory } from '../../types';
+import ReceiptLightbox, { ReceiptItem } from '../../components/receipt/ReceiptLightbox';
 import './Expenses.css';
 
 const CATEGORY_ICONS: Record<ExpenseCategory, string> = {
@@ -11,13 +12,22 @@ const CATEGORY_ICONS: Record<ExpenseCategory, string> = {
   entertainment: '🎬', utilities: '💡', other: '📦',
 };
 
+const API_BASE = process.env.REACT_APP_API_BASE_URL?.replace('/api', '') ?? 'http://localhost:4000';
+
 const Expenses = () => {
   const { groups } = useGroups();
   const { expenses, deleteExpense } = useExpenses();
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // User can edit/delete only if they are a participant (in splits) or the payer
+  const [filterGroup, setFilterGroup] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [search, setSearch] = useState('');
+
+  // Lightbox state
+  const [lbIndex, setLbIndex] = useState(0);
+  const [lbOpen, setLbOpen] = useState(false);
+
   const canModify = (e: { paidByName: string; splits: { memberName: string }[] }) => {
     if (!user) return false;
     const name = user.name.toLowerCase();
@@ -26,9 +36,6 @@ const Expenses = () => {
       e.splits.some(s => s.memberName.toLowerCase().includes(name))
     );
   };
-  const [filterGroup, setFilterGroup] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [search, setSearch] = useState('');
 
   const filtered = expenses.filter(e => {
     if (filterGroup && e.groupId !== filterGroup) return false;
@@ -38,6 +45,29 @@ const Expenses = () => {
   });
 
   const total = filtered.reduce((sum, e) => sum + e.amount, 0);
+
+  // Build a flat list of all receipt items across all filtered expenses (multiple per expense)
+  const allReceipts: ReceiptItem[] = filtered.flatMap(e =>
+    (e.receiptUrls ?? []).map(url => ({
+      title: e.title,
+      url: `${API_BASE}${url}`,
+      filename: url.split('/').pop() ?? 'receipt',
+      isPdf: url.endsWith('.pdf'),
+    }))
+  );
+
+  // Map expense id → first receipt index in allReceipts
+  const receiptIndexMap = new Map<string, number>();
+  let idx = 0;
+  for (const e of filtered) {
+    const count = (e.receiptUrls ?? []).length;
+    if (count > 0) { receiptIndexMap.set(e.id, idx); idx += count; }
+  }
+
+  const openLightbox = (expenseId: string) => {
+    const i = receiptIndexMap.get(expenseId);
+    if (i !== undefined) { setLbIndex(i); setLbOpen(true); }
+  };
 
   return (
     <div className="page-content">
@@ -83,6 +113,7 @@ const Expenses = () => {
                   <th>Date</th>
                   <th>Split</th>
                   <th>Amount</th>
+                  <th></th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -90,6 +121,8 @@ const Expenses = () => {
                 {filtered.map(e => {
                   const group = groups.find(g => g.id === e.groupId);
                   const allowed = canModify(e);
+                  const receipts = e.receiptUrls ?? [];
+
                   return (
                     <tr key={e.id}>
                       <td>
@@ -115,6 +148,22 @@ const Expenses = () => {
                       </td>
                       <td><span className="font-bold">₹{e.amount.toLocaleString()}</span></td>
                       <td>
+                        {receipts.length > 0 && (
+                          <button
+                            className="receipt-badge"
+                            onClick={() => openLightbox(e.id)}
+                            title={`${receipts.length} attachment${receipts.length > 1 ? 's' : ''}`}
+                          >
+                            <span className="receipt-badge-icon">📎</span>
+                            <span className="receipt-badge-label">
+                              {receipts.length === 1
+                                ? (receipts[0].split('/').pop() ?? 'receipt')
+                                : `${receipts.length} files`}
+                            </span>
+                          </button>
+                        )}
+                      </td>
+                      <td>
                         <div className="flex gap-2">
                           <button
                             className="btn btn-outline btn-sm"
@@ -137,6 +186,16 @@ const Expenses = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {/* ── Receipt lightbox — shared across all visible expenses ── */}
+      {lbOpen && allReceipts.length > 0 && (
+        <ReceiptLightbox
+          receipts={allReceipts}
+          index={lbIndex}
+          onChange={setLbIndex}
+          onClose={() => setLbOpen(false)}
+        />
       )}
     </div>
   );

@@ -1,6 +1,11 @@
 #dependencies
+/backend
+/backend/node_modules
+/backend/package-lock.json
+
 /node_modules
 /.pnp
+package-lock.json
 .pnp.js
 
 # testing

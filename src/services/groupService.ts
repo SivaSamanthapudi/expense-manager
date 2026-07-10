@@ -1,5 +1,5 @@
-import { Group, Member } from '../types';
 import { apiClient } from './apiClient';
+import { Group, Member } from '../types';
 
 export const groupService = {
   async fetchAll(): Promise<Group[]> {

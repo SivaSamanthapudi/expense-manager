@@ -1,182 +1,139 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
-import { Group, Member, GroupCategory } from '../types';
 
-interface GroupContextType {
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { Group, Member } from '../types';
+import { groupService } from '../services/groupService';
+import { parseApiError } from '../services/authService';
+import { useAuth } from './AuthContext';
+
+export type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
+
+export interface GroupContextType {
   groups: Group[];
-  addGroup: (group: Omit<Group, 'id' | 'createdAt'>) => void;
-  updateGroup: (id: string, data: Partial<Group>) => void;
-  deleteGroup: (id: string) => void;
-  addMember: (member: Omit<Member, 'id'>) => void;
-  removeMember: (memberId: string, groupId?: string) => void;
+  status: LoadStatus;
+  addGroup: (group: Omit<Group, 'id' | 'createdAt'>) => Promise<void>;
+  updateGroup: (id: string, data: Partial<Group>) => Promise<void>;
+  deleteGroup: (id: string) => Promise<void>;
+  addMember: (member: Omit<Member, 'id'>) => Promise<void>;
+  removeMember: (memberId: string, groupId: string) => Promise<void>;
   getGroupMembers: (groupId: string) => Member[];
+  refetch: () => Promise<void>;
 }
 
-const SEED_GROUPS: Group[] = [
-  {
-    id: 'g1',
-    name: 'Goa Trip 2024',
-    description: 'Annual beach trip with friends',
-    category: GroupCategory.Trip,
-    simplifyDebts: true,
-    members: [
-      {
-        id: 'm1',
-        name: 'Alice Johnson',
-        email: 'alice@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=Alice',
-        groupId: 'g1',
-      },
-      {
-        id: 'm2',
-        name: 'Bob Smith',
-        email: 'bob@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=Bob',
-        groupId: 'g1',
-      },
-      {
-        id: 'm3',
-        name: 'Carol White',
-        email: 'carol@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=Carol',
-        groupId: 'g1',
-      },
-    ],
-    createdAt: '2024-12-01',
-    createdBy: '1',
-  },
-  {
-    id: 'g2',
-    name: 'Apartment 4B',
-    description: 'Shared apartment expenses',
-    category: GroupCategory.Home,
-    simplifyDebts: true,
-    members: [
-      {
-        id: 'm4',
-        name: 'David Lee',
-        email: 'david@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=David',
-        groupId: 'g2',
-      },
-      {
-        id: 'm5',
-        name: 'Eva Green',
-        email: 'eva@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=Eva',
-        groupId: 'g2',
-      },
-    ],
-    createdAt: '2024-11-15',
-    createdBy: '1',
-  },
-  {
-    id: 'g3',
-    name: 'Kerala Trip',
-    description: 'Couple trip',
-    category: GroupCategory.Home,
-    simplifyDebts: true,
-    members: [
-      {
-        id: 'm6',
-        name: 'siva',
-        email: 'siva@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=Siva',
-        groupId: 'g3',
-      },
-      {
-        id: 'm7',
-        name: 'Anuja',
-        email: 'anuja@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=Anuja',
-        groupId: 'g3',
-      },
-      {
-        id: 'm8',
-        name: 'Ojasvi',
-        email: 'ojasvi@example.com',
-        avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=Ojasvi',
-        groupId: 'g3',
-      },
-    ],
-    createdAt: '2025-05-27',
-    createdBy: '1',
-  },
-];
-
-const GroupContext = createContext<GroupContextType | null>(null);
+export const GroupContext = createContext<GroupContextType | null>(null);
 
 export const GroupProvider = ({ children }: { children: ReactNode }) => {
-  const [groups, setGroups] = useState<Group[]>(SEED_GROUPS);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [status, setStatus] = useState<LoadStatus>('idle');
+  const { user, status: authStatus } = useAuth();
 
-  const addGroup = (group: Omit<Group, 'id' | 'createdAt'>) => {
-    setGroups((prev) => [
-      ...prev,
-      {
-        ...group,
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString().split('T')[0],
-      },
-    ]);
-  };
+  const refetch = useCallback(async () => {
+    setStatus('loading');
+    try {
+      const data = await groupService.fetchAll();
+      setGroups(data);
+      setStatus('success');
+    } catch {
+      setStatus('error');
+    }
+  }, []);
 
-  const updateGroup = (id: string, data: Partial<Group>) => {
-    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, ...data } : g)));
-  };
+  useEffect(() => {
+    if(authStatus === 'idle') return;
+    if (!user) {
+      setGroups([]);
+      setStatus('idle');
+    } else {
+      refetch();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authStatus,user?.id]);
 
-  const deleteGroup = (id: string) => {
-    setGroups((prev) => prev.filter((g) => g.id !== id));
-  };
+  const addGroup = useCallback(async (payload: Omit<Group, 'id' | 'createdAt'>) => {
+    const tempId = `temp_${Date.now()}`;
+    const optimistic: Group = { ...payload, id: tempId, createdAt: new Date().toISOString().split('T')[0] };
+    setGroups(prev => [...prev, optimistic]);
+    try {
+      const created = await groupService.create(payload);
+      setGroups(prev => prev.map(g => (g.id === tempId ? created : g)));
+    } catch (err) {
+      setGroups(prev => prev.filter(g => g.id !== tempId));
+      throw new Error(parseApiError(err));
+    }
+  }, []);
 
-  const addMember = (member: Omit<Member, 'id'>) => {
-    setGroups((prev) => {
-      // Reuse the existing id if this person is already a member of another group
-      const existingId = prev
-        .flatMap((g) => g.members)
-        .find((m) => m.email.toLowerCase() === member.email.toLowerCase())?.id;
+  const updateGroup = useCallback(async (id: string, data: Partial<Group>) => {
+    const previous = groups.find(g => g.id === id);
+    setGroups(prev => prev.map(g => (g.id === id ? { ...g, ...data } : g)));
+    try {
+      const updated = await groupService.update(id, data);
+      setGroups(prev => prev.map(g => (g.id === id ? updated : g)));
+    } catch (err) {
+      if (previous) setGroups(prev => prev.map(g => (g.id === id ? previous : g)));
+      throw new Error(parseApiError(err));
+    }
+  }, [groups]);
 
-      return prev.map((g) => {
-        if (g.id !== member.groupId) return g;
-        if (
-          g.members.some(
-            (m) => m.email.toLowerCase() === member.email.toLowerCase()
-          )
-        )
-          return g;
-        return {
-          ...g,
-          members: [
-            ...g.members,
-            { ...member, id: existingId ?? Date.now().toString() },
-          ],
-        };
-      });
-    });
-  };
+  const deleteGroup = useCallback(async (id: string) => {
+    const snapshot = groups.find(g => g.id === id);
+    setGroups(prev => prev.filter(g => g.id !== id));
+    try {
+      await groupService.remove(id);
+    } catch (err) {
+      if (snapshot) setGroups(prev => [...prev, snapshot]);
+      throw new Error(parseApiError(err));
+    }
+  }, [groups]);
 
-  const removeMember = (memberId: string) => {
-    setGroups((prev) =>
-      prev.map((g) => ({
-        ...g,
-        members: g.members.filter((m) => m.id !== memberId),
-      }))
-    );
-  };
+  const addMember = useCallback(async (member: Omit<Member, 'id'>) => {
+    const tempId = `temp_${Date.now()}`;
+    setGroups(prev => prev.map(g => {
+      if (g.id !== member.groupId) return g;
+      if (g.members.some(m => m.email.toLowerCase() === member.email.toLowerCase())) return g;
+      return { ...g, members: [...g.members, { ...member, id: tempId }] };
+    }));
+    try {
+      const { groupId, ...rest } = member;
+      const created = await groupService.addMember(groupId, rest);
+      setGroups(prev => prev.map(g =>
+        g.id === member.groupId
+          ? { ...g, members: g.members.map(m => (m.id === tempId ? created : m)) }
+          : g
+      ));
+    } catch (err) {
+      setGroups(prev => prev.map(g =>
+        g.id === member.groupId
+          ? { ...g, members: g.members.filter(m => m.id !== tempId) }
+          : g
+      ));
+      throw new Error(parseApiError(err));
+    }
+  }, []);
 
-  const getGroupMembers = (groupId: string) =>
-    groups.find((g) => g.id === groupId)?.members ?? [];
+  const removeMember = useCallback(async (memberId: string, groupId: string) => {
+    const group = groups.find(g => g.id === groupId);
+    const snapshot = group?.members.find(m => m.id === memberId);
+    setGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, members: g.members.filter(m => m.id !== memberId) } : g
+    ));
+    try {
+      await groupService.removeMember(groupId, memberId);
+    } catch (err) {
+      if (snapshot) {
+        setGroups(prev => prev.map(g =>
+          g.id === groupId ? { ...g, members: [...g.members, snapshot] } : g
+        ));
+      }
+      throw new Error(parseApiError(err));
+    }
+  }, [groups]);
+
+  const getGroupMembers = useCallback(
+    (groupId: string) => groups.find(g => g.id === groupId)?.members ?? [],
+    [groups],
+  );
 
   return (
-    <GroupContext.Provider
-      value={{
-        groups,
-        addGroup,
-        updateGroup,
-        deleteGroup,
-        addMember,
-        removeMember,
-        getGroupMembers,
-      }}
-    >
+    <GroupContext.Provider value={{ groups, status, addGroup, updateGroup, deleteGroup, addMember, removeMember, getGroupMembers, refetch }}>
       {children}
     </GroupContext.Provider>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
@@ -15,10 +15,12 @@ type Step = 'details' | 'members';
 const EMPTY_FORM = { name: '', description: '', category: GroupCategory.Trip as GroupCategory, simplifyDebts: true };
 
 const Groups = () => {
-  const { groups, addGroup, updateGroup, deleteGroup } = useGroups();
+  const { groups, addGroup, updateGroup, deleteGroup, refetch } = useGroups();
   const { expenses } = useExpenses();
   const { user } = useAuth();
   const navigate = useNavigate();
+  
+  useEffect(() => {void refetch();} ,[refetch]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
