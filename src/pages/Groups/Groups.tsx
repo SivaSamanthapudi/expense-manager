@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
@@ -19,17 +19,19 @@ const Groups = () => {
   const { expenses } = useExpenses();
   const { user } = useAuth();
   const navigate = useNavigate();
-  
-  useEffect(() => {void refetch();} ,[refetch]);
+
+  useEffect(() => { void refetch(); }, [refetch]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [step, setStep] = useState<Step>('details');
   const [form, setForm] = useState<{ name: string; description: string; category: GroupCategory; simplifyDebts: boolean }>(EMPTY_FORM);
   const [error, setError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const handleDeleteGroup = (groupId: string, groupName: string) => {
+  const handleDeleteGroup = async (groupId: string, groupName: string) => {
     const hasUnsettled = expenses
       .filter(e => e.groupId === groupId)
       .some(e => e.splits.some(s => !s.paid));
@@ -37,7 +39,11 @@ const Groups = () => {
       setDeleteError(`Cannot delete "${groupName}" — clear all payments first.`);
       return;
     }
-    deleteGroup(groupId);
+    try {
+      await deleteGroup(groupId);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : `Failed to delete "${groupName}"`);
+    }
   };
 
   // members to add: mix of picked-existing + newly typed
@@ -83,6 +89,7 @@ const Groups = () => {
     setSelectedMembers([]);
     setNewMember({ name: '', email: '' });
     setError('');
+    setSaveError('');
     setMemberError('');
   };
 
@@ -92,12 +99,19 @@ const Groups = () => {
     setStep('members');
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!form.name.trim()) { setError('Group name is required'); return; }
-    if (editingGroup) {
-      updateGroup(editingGroup.id, { name: form.name, description: form.description, category: form.category, simplifyDebts: form.simplifyDebts });
+    if (!editingGroup) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await updateGroup(editingGroup.id, { name: form.name, description: form.description, category: form.category, simplifyDebts: form.simplifyDebts });
+      resetModal();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save changes');
+    } finally {
+      setSaving(false);
     }
-    resetModal();
   };
 
   const toggleExistingMember = (m: Omit<Member, 'groupId'>) => {
@@ -206,8 +220,10 @@ const Groups = () => {
         footer={
           editingGroup ? (
             <>
-              <button className="btn btn-outline" onClick={resetModal}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSaveEdit}>Save Changes</button>
+              <button className="btn btn-outline" onClick={resetModal} disabled={saving}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSaveEdit} disabled={saving}>
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
             </>
           ) : step === 'details' ? (
             <>
@@ -226,6 +242,7 @@ const Groups = () => {
       >
         {step === 'details' && (
           <>
+            {saveError && <p className="form-error" style={{ marginBottom: 12 }}>{saveError}</p>}
             <div className="form-group">
               <label className="form-label">Group Name *</label>
               <input className="form-control" placeholder="e.g. Goa Trip 2025" value={form.name}

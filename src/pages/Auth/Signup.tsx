@@ -14,7 +14,7 @@ type SignupFormData = {
   confirm: string;
 };
 
-const Signup = () => {
+function Signup(){
   const { signup } = useAuth();
   const navigate = useNavigate();
   const [contactMethod, setContactMethod] = useState<ContactMethod>('email');

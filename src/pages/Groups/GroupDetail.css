@@ -224,3 +224,159 @@ button:disabled {
   flex-shrink: 0;
   color: var(--text);
 }
+
+/* ── "Not found in SplitWise" banner ── */
+.member-not-found {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fef9ec;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.member-not-found-icon { margin-right: 6px; }
+.member-not-found-text { font-size: 13px; color: #92400e; line-height: 1.5; }
+.member-not-found-actions { display: flex; gap: 8px; }
+
+/* ── Manual entry form ── */
+.manual-member-form {
+  background: var(--secondary);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.manual-member-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* ── Pending basket ── */
+.pending-members-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.pending-members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pending-member-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.pending-member-chip.registered {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.pending-member-chip.unregistered {
+  background: #fef9ec;
+  border-color: #fde68a;
+}
+.pending-member-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pending-member-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pending-member-email {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pending-member-badge {
+  font-size: 10px;
+  color: #b45309;
+  font-style: italic;
+  margin-top: 1px;
+}
+.pending-member-remove {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.pending-member-remove:hover { background: #fee2e2; color: var(--danger); }
+
+/* ── Autocomplete suggestions ── */
+.member-suggestions {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 200;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.member-suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+.member-suggestion-item:hover { background: var(--secondary); }
+
+.member-suggestion-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.member-suggestion-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-suggestion-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-suggestion-add {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 8px;
+}

@@ -23,10 +23,20 @@ const Expenses = () => {
   const [filterGroup, setFilterGroup] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [search, setSearch] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Lightbox state
   const [lbIndex, setLbIndex] = useState(0);
   const [lbOpen, setLbOpen] = useState(false);
+
+  const handleDelete = async (id: string) => {
+    setDeleteError(null);
+    try {
+      await deleteExpense(id);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete expense');
+    }
+  };
 
   const canModify = (e: { paidByName: string; splits: { memberName: string }[] }) => {
     if (!user) return false;
@@ -78,6 +88,13 @@ const Expenses = () => {
         </div>
         <button className="btn btn-primary" onClick={() => navigate('/expenses/new')}>+ Add Expense</button>
       </div>
+
+      {deleteError && (
+        <div className="remove-error-banner mb-4">
+          ⚠️ {deleteError}
+          <button className="remove-error-close" onClick={() => setDeleteError(null)}>✕</button>
+        </div>
+      )}
 
       <div className="expense-filters card card-body mb-4">
         <input className="form-control" placeholder="🔍 Search expenses..." value={search}
@@ -173,7 +190,7 @@ const Expenses = () => {
                           >Edit</button>
                           <button
                             className="btn btn-danger btn-sm"
-                            onClick={() => deleteExpense(e.id)}
+                            onClick={() => handleDelete(e.id)}
                             disabled={!allowed}
                             title={!allowed ? 'You are not a participant in this expense' : ''}
                           >Del</button>

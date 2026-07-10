@@ -1,12 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
 import { Expense, ExpenseSplit, EXPENSE_CATEGORIES, ExpenseCategory } from '../../types';
+import ReceiptLightbox, { ReceiptItem } from '../../components/receipt/ReceiptLightbox';
 import './ExpenseForm.css';
 
 type SplitMode = 'equal' | 'custom';
+
+const API_BASE = process.env.REACT_APP_API_BASE_URL?.replace('/api', '') ?? 'http://localhost:4000';
+
+interface AttachedFile {
+  id: string;      // local key for React
+  file: File;
+  previewUrl: string | null; // object URL for images, null for PDF
+}
 
 const ExpenseForm = () => {
   const { id } = useParams<{ id: string }>();
@@ -31,7 +40,17 @@ const ExpenseForm = () => {
     notes: existing?.notes ?? '',
   });
 
-  // Detect split mode from saved data: if all amounts are equal → equal, else custom
+  // ── Receipt state ─────────────────────────────────────────────────────────
+  // existingUrls: server URLs already saved (edit mode). Removing from this list signals deletion.
+  const [existingUrls, setExistingUrls] = useState<string[]>(existing?.receiptUrls ?? []);
+  // newFiles: files selected this session (not yet uploaded)
+  const [newFiles, setNewFiles] = useState<AttachedFile[]>([]);
+  // lightbox
+  const [lbOpen, setLbOpen] = useState(false);
+  const [lbIndex, setLbIndex] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Split state ───────────────────────────────────────────────────────────
   const detectSplitMode = (): SplitMode => {
     if (!existing?.splits || existing.splits.length <= 1) return 'equal';
     const amounts = existing.splits.map(s => s.amount);
@@ -40,21 +59,15 @@ const ExpenseForm = () => {
   };
 
   const [splitMode, setSplitMode] = useState<SplitMode>(detectSplitMode);
-  // In edit mode: seed strictly from saved splits — never auto-include new group members
   const [splits, setSplits] = useState<ExpenseSplit[]>(existing?.splits ?? []);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const group = groups.find(g => g.id === form.groupId);
   const allGroupMembers = group?.members ?? [];
+  const membersNotInSplit = allGroupMembers.filter(m => !splits.some(s => s.memberId === m.id));
 
-  // Members not yet in the current split — shown in the "add member" picker
-  const membersNotInSplit = allGroupMembers.filter(
-    m => !splits.some(s => s.memberId === m.id)
-  );
-
-  // ── Effect 1: When group changes (add mode only) reset splits to all members ──
   useEffect(() => {
-    if (isEdit) return; // editing: never auto-rebuild from group members
+    if (isEdit) return;
     if (allGroupMembers.length === 0) { setSplits([]); return; }
     const total = parseFloat(form.amount || '0');
     const count = allGroupMembers.length;
@@ -72,18 +85,11 @@ const ExpenseForm = () => {
         return m.id === resolvedId;
       })(),
     })));
-    if (!form.paidBy) {
-      setForm(f => ({ ...f, paidBy: SELF_ID }));
-    }
+    if (!form.paidBy) setForm(f => ({ ...f, paidBy: SELF_ID }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.groupId]);
 
-  // ── Effect 2: Recalculate amounts when amount changes or equal mode toggled ──
-  // Only recalculates members ALREADY in splits — never adds new ones.
-  // `initializedRef` prevents this from firing on first mount in edit mode
-  // (which would overwrite perfectly good saved custom amounts).
   const [amountInitialized, setAmountInitialized] = useState(!isEdit);
-
   useEffect(() => {
     if (!amountInitialized) { setAmountInitialized(true); return; }
     if (!form.amount || splits.length === 0) return;
@@ -93,47 +99,35 @@ const ExpenseForm = () => {
     const each = parseFloat((total / count).toFixed(2));
     setSplits(prev => prev.map((s, i) => ({
       ...s,
-      amount: i === count - 1
-        ? parseFloat((total - each * (count - 1)).toFixed(2))
-        : each,
+      amount: i === count - 1 ? parseFloat((total - each * (count - 1)).toFixed(2)) : each,
     })));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.amount, splitMode]);
 
-  // Sync paid flags for all splits based on who paid — called on every paidBy change
   const syncPaidFlags = (newPaidBy: string) => {
     const resolvedId = newPaidBy === SELF_ID
       ? allGroupMembers.find(m => m.name.toLowerCase() === user?.name?.toLowerCase())?.id ?? SELF_ID
       : newPaidBy;
-    setSplits(prev => prev.map(s => ({
-      ...s,
-      paid: s.memberId === resolvedId,
-    })));
+    setSplits(prev => prev.map(s => ({ ...s, paid: s.memberId === resolvedId })));
   };
 
-  // ── Manually add a member to the split ──
   const addMemberToSplit = (memberId: string) => {
     const member = allGroupMembers.find(m => m.id === memberId);
     if (!member) return;
     const total = parseFloat(form.amount || '0');
     const newCount = splits.length + 1;
-
     if (splitMode === 'equal' && total > 0) {
       const each = parseFloat((total / newCount).toFixed(2));
-      const newSplits = [...splits, { memberId: member.id, memberName: member.name, amount: 0, paid: false }];
-      setSplits(newSplits.map((s, i) => ({
+      const updated = [...splits, { memberId: member.id, memberName: member.name, amount: 0, paid: false }];
+      setSplits(updated.map((s, i) => ({
         ...s,
-        amount: i === newSplits.length - 1
-          ? parseFloat((total - each * (newCount - 1)).toFixed(2))
-          : each,
+        amount: i === updated.length - 1 ? parseFloat((total - each * (newCount - 1)).toFixed(2)) : each,
       })));
     } else {
-      // custom mode: add with 0, let the user fill in the amount
       setSplits(prev => [...prev, { memberId: member.id, memberName: member.name, amount: 0, paid: false }]);
     }
   };
 
-  // ── Remove a member from the split ──
   const removeMemberFromSplit = (memberId: string) => {
     const remaining = splits.filter(s => s.memberId !== memberId);
     if (splitMode === 'equal' && remaining.length > 0) {
@@ -141,14 +135,68 @@ const ExpenseForm = () => {
       const each = parseFloat((total / remaining.length).toFixed(2));
       setSplits(remaining.map((s, i) => ({
         ...s,
-        amount: i === remaining.length - 1
-          ? parseFloat((total - each * (remaining.length - 1)).toFixed(2))
-          : each,
+        amount: i === remaining.length - 1 ? parseFloat((total - each * (remaining.length - 1)).toFixed(2)) : each,
       })));
     } else {
       setSplits(remaining);
     }
   };
+
+  // ── Receipt handlers ───────────────────────────────────────────────────────
+
+  const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+
+    const total = existingUrls.length + newFiles.length + files.length;
+    if (total > 10) {
+      alert('Maximum 10 attachments allowed.');
+      return;
+    }
+
+    const attached: AttachedFile[] = files.map(file => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      // Create an object URL for both images and PDFs so the lightbox can open them
+      previewUrl: URL.createObjectURL(file),
+    }));
+    setNewFiles(prev => [...prev, ...attached]);
+    // reset input so same file can be re-added after removal
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeExistingUrl = (url: string) => {
+    setExistingUrls(prev => prev.filter(u => u !== url));
+  };
+
+  const removeNewFile = (fileId: string) => {
+    setNewFiles(prev => {
+      const target = prev.find(f => f.id === fileId);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter(f => f.id !== fileId);
+    });
+  };
+
+  // ── Build lightbox items (existing + new) ─────────────────────────────────
+
+  const lbItems: ReceiptItem[] = [
+    ...existingUrls.map(url => ({
+      title: form.title || 'Receipt',
+      url: `${API_BASE}${url}`,
+      filename: url.split('/').pop() ?? 'receipt',
+      isPdf: url.endsWith('.pdf'),
+    })),
+    ...newFiles.map(af => ({
+      title: form.title || 'Receipt',
+      url: af.previewUrl ?? '',
+      filename: af.file.name,
+      isPdf: af.file.type === 'application/pdf',
+    })),
+  ];
+
+  const openLightbox = (index: number) => { setLbIndex(index); setLbOpen(true); };
+
+  // ── Validation & submit ────────────────────────────────────────────────────
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -158,7 +206,9 @@ const ExpenseForm = () => {
     if (!form.paidBy) e.paidBy = 'Paid by is required';
     if (splits.length === 0) e.splits = 'Add at least one member to the split';
     const splitTotal = splits.reduce((s, sp) => s + sp.amount, 0);
-    if (Math.abs(splitTotal - parseFloat(form.amount || '0')) > 0.01) e.splits = `Split total ₹${splitTotal.toFixed(2)} doesn't match ₹${form.amount}`;
+    if (Math.abs(splitTotal - parseFloat(form.amount || '0')) > 0.01) {
+      e.splits = `Split total ₹${splitTotal.toFixed(2)} doesn't match ₹${form.amount}`;
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -166,8 +216,6 @@ const ExpenseForm = () => {
   const handleSubmit = () => {
     if (!validate()) return;
 
-    // Resolve 'self' → actual group member whose name matches the logged-in user.
-    // Fall back to the user's name as display if no member match found.
     let resolvedPaidBy: { id: string; name: string };
     if (form.paidBy === SELF_ID) {
       const matchedMember = allGroupMembers.find(
@@ -181,7 +229,7 @@ const ExpenseForm = () => {
       resolvedPaidBy = { id: form.paidBy, name: m?.name ?? '' };
     }
 
-    const payload = {
+    const payload: Omit<Expense, 'id'> = {
       groupId: form.groupId,
       title: form.title,
       amount: parseFloat(form.amount),
@@ -192,8 +240,12 @@ const ExpenseForm = () => {
       date: form.date,
       notes: form.notes,
     };
-    if (isEdit && id) updateExpense(id, payload);
-    else addExpense(payload);
+
+    const files = newFiles.map(af => af.file);
+
+    if (isEdit && id) updateExpense(id, payload, files, existingUrls);
+    else addExpense(payload, files);
+
     navigate(form.groupId ? `/groups/${form.groupId}` : '/expenses');
   };
 
@@ -207,6 +259,7 @@ const ExpenseForm = () => {
 
   const splitTotal = splits.reduce((s, sp) => s + sp.amount, 0);
   const remaining = parseFloat(form.amount || '0') - splitTotal;
+  const totalAttachments = existingUrls.length + newFiles.length;
 
   return (
     <div className="page-content">
@@ -285,6 +338,97 @@ const ExpenseForm = () => {
               <textarea className="form-control" placeholder="Optional notes..." rows={2} value={form.notes}
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
+
+            {/* ── Receipts / Attachments ── */}
+            <div className="form-group">
+              <label className="form-label">
+                Attachments
+                <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>
+                  {' '}(optional · image or PDF · max 5 MB each · up to 10)
+                </span>
+                {totalAttachments > 0 && (
+                  <span className="receipt-count-badge">{totalAttachments}</span>
+                )}
+              </label>
+
+              {/* Attachment list */}
+              {totalAttachments > 0 && (
+                <div className="receipt-attachment-list">
+                  {/* Existing saved URLs */}
+                  {existingUrls.map((url, i) => {
+                    const filename = url.split('/').pop() ?? 'receipt';
+                    const isPdf = url.endsWith('.pdf');
+                    return (
+                      <div key={url} className="receipt-attachment-item">
+                        <button
+                          type="button"
+                          className="receipt-attachment-chip"
+                          onClick={() => openLightbox(i)}
+                        >
+                          <span className="receipt-attachment-icon">{isPdf ? '📄' : '🖼️'}</span>
+                          <span className="receipt-attachment-name">{filename}</span>
+                          <span className="receipt-attachment-preview-hint">Preview ↗</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="receipt-remove-x"
+                          onClick={() => removeExistingUrl(url)}
+                          aria-label="Remove"
+                        >✕</button>
+                      </div>
+                    );
+                  })}
+                  {/* Newly added files */}
+                  {newFiles.map((af, i) => {
+                    const isPdf = af.file.type === 'application/pdf';
+                    const lbIdx = existingUrls.length + i;
+                    return (
+                      <div key={af.id} className="receipt-attachment-item">
+                        <button
+                          type="button"
+                          className="receipt-attachment-chip"
+                          onClick={() => openLightbox(lbIdx)}
+                        >
+                          <span className="receipt-attachment-icon">{isPdf ? '📄' : '🖼️'}</span>
+                          <span className="receipt-attachment-name">{af.file.name}</span>
+                          <span className="receipt-attachment-preview-hint">Preview ↗</span>
+                          <span className="receipt-new-badge">new</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="receipt-remove-x"
+                          onClick={() => removeNewFile(af.id)}
+                          aria-label="Remove"
+                        >✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Hidden multi-file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleFilesSelected}
+              />
+
+              {/* Add more / dropzone */}
+              {totalAttachments < 10 && (
+                <div
+                  className={`receipt-dropzone ${totalAttachments > 0 ? 'receipt-dropzone-compact' : ''}`}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <span className="receipt-dropzone-icon">📎</span>
+                  <span className="receipt-dropzone-text">
+                    {totalAttachments === 0 ? 'Click to attach receipts' : 'Add more attachments'}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -342,18 +486,12 @@ const ExpenseForm = () => {
                   ))}
                 </div>
 
-                {/* Add member to split */}
                 {membersNotInSplit.length > 0 && (
                   <div className="add-to-split">
                     <p className="text-xs text-muted mb-2">Add group member to this split:</p>
                     <div className="add-to-split-chips">
                       {membersNotInSplit.map(m => (
-                        <button
-                          key={m.id}
-                          className="add-split-chip"
-                          onClick={() => addMemberToSplit(m.id)}
-                          title={m.email}
-                        >
+                        <button key={m.id} className="add-split-chip" onClick={() => addMemberToSplit(m.id)} title={m.email}>
                           <img src={m.avatar} alt={m.name} className="avatar" style={{ width: 20, height: 20 }} />
                           <span>{m.name.split(' ')[0]}</span>
                           <span className="add-chip-plus">+</span>
@@ -392,6 +530,16 @@ const ExpenseForm = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Receipt lightbox ── */}
+      {lbOpen && lbItems.length > 0 && (
+        <ReceiptLightbox
+          receipts={lbItems}
+          index={lbIndex}
+          onChange={setLbIndex}
+          onClose={() => setLbOpen(false)}
+        />
+      )}
     </div>
   );
 };

@@ -1,6 +1,14 @@
 import { apiClient } from './apiClient';
 import { Group, Member } from '../types';
 
+export interface UserSuggestion {
+  id: string;
+  name: string;
+  email: string;
+  mobile: string;
+  avatar: string;
+}
+
 export const groupService = {
   async fetchAll(): Promise<Group[]> {
     const { data } = await apiClient.get<Group[]>('/groups');
@@ -29,5 +37,11 @@ export const groupService = {
 
   async removeMember(groupId: string, memberId: string): Promise<void> {
     await apiClient.delete(`/groups/${groupId}/members/${memberId}`);
+  },
+
+  async searchUsers(q: string): Promise<UserSuggestion[]> {
+    if (!q.trim()) return [];
+    const { data } = await apiClient.get<UserSuggestion[]>(`/users/search?q=${encodeURIComponent(q)}`);
+    return data;
   },
 };

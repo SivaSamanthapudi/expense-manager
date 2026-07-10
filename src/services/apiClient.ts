@@ -53,7 +53,7 @@ apiClient.interceptors.response.use(
       if (!refreshToken) throw new Error('No refresh token');
 
       const { data } = await axios.post(
-        `${process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:3000/api'}/auth/refresh`,
+        `${process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:3000/api/'}auth/refresh`,
         { refreshToken },
       );
 

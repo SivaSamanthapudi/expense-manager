@@ -25,37 +25,52 @@ const getGreeting = () => {
 const Dashboard = () => {
   const { groups } = useGroups();
   const { expenses } = useExpenses();
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const navigate = useNavigate();
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const totalGroups = groups.length;
-  const recentExpenses = [...expenses].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const userName = user?.name?.toLowerCase();
 
-  // Find the logged-in user's member id across all groups (matched by name)
-  const selfMemberId = groups
-    .flatMap(g => g.members)
-    .find(m => m.name.toLowerCase() === user?.name?.toLowerCase())
-    ?.id;
+  // Groups the logged-in user belongs to (name-matched against members list)
+  const myGroups = groups.filter(g =>
+    g.members.some(m => m.name.toLowerCase() === userName)
+  );
+
+  // The user may have a different member ID in each group — collect them all
+  const selfMemberIds = new Set(
+    myGroups
+      .flatMap(g => g.members)
+      .filter(m => m.name.toLowerCase() === userName)
+      .map(m => m.id)
+  );
+
+  // Expenses where the user is either the payer or a split participant
+  const myExpenses = expenses.filter(e =>
+    myGroups.some(g => g.id === e.groupId) &&
+    (
+      e.paidByName.toLowerCase() === userName ||
+      e.splits.some(s => s.memberName.toLowerCase() === userName)
+    )
+  );
+
+  const totalExpenses = myExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const recentExpenses = [...myExpenses].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
 
   // Compute per-group debt transactions, respecting each group's simplifyDebts flag
   let youOwe = 0;
   let owedToYou = 0;
-  if (selfMemberId) {
-    groups.forEach(g => {
-      const groupExpenses = expenses.filter(e => e.groupId === g.id);
-      const balances = computeMemberBalances(g, expenses);
-      const transactions = g.simplifyDebts
-        ? simplifyDebts(balances)
-        : groupExpenses.flatMap(expense =>
-            expense.splits
-              .filter(s => !s.paid && s.memberId !== expense.paidBy)
-              .map(s => ({ fromId: s.memberId, toId: expense.paidBy, amount: s.amount }))
-          );
-      youOwe    += transactions.filter(t => t.fromId === selfMemberId).reduce((s, t) => s + t.amount, 0);
-      owedToYou += transactions.filter(t => t.toId   === selfMemberId).reduce((s, t) => s + t.amount, 0);
-    });
-  }
+  myGroups.forEach(g => {
+    const groupExpenses = expenses.filter(e => e.groupId === g.id);
+    const balances = computeMemberBalances(g, expenses);
+    const transactions = g.simplifyDebts
+      ? simplifyDebts(balances)
+      : groupExpenses.flatMap(expense =>
+          expense.splits
+            .filter(s => !s.paid && s.memberId !== expense.paidBy)
+            .map(s => ({ fromId: s.memberId, toId: expense.paidBy, amount: s.amount }))
+        );
+    youOwe    += transactions.filter(t => selfMemberIds.has(t.fromId)).reduce((s, t) => s + t.amount, 0);
+    owedToYou += transactions.filter(t => selfMemberIds.has(t.toId)).reduce((s, t) => s + t.amount, 0);
+  });
 
   return (
     <div className="page-content">
@@ -78,7 +93,7 @@ const Dashboard = () => {
           <div className="stat-icon" style={{ background: '#d1fae5' }}>👥</div>
           <div className="stat-body">
             <p className="stat-label">Groups</p>
-            <p className="stat-value">{totalGroups}</p>
+            <p className="stat-value">{myGroups.length}</p>
           </div>
         </div>
         <div className="stat-card">
@@ -129,12 +144,12 @@ const Dashboard = () => {
               <h2 className="font-semibold">Your Groups</h2>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate('/groups')}>View all</button>
             </div>
-            {groups.length === 0 ? (
+            {myGroups.length === 0 ? (
               <p className="text-muted text-sm">No groups yet</p>
             ) : (
               <div className="group-list">
-                {groups.map(g => {
-                  const groupTotal = expenses.filter(e => e.groupId === g.id).reduce((s, e) => s + e.amount, 0);
+                {myGroups.map(g => {
+                  const groupTotal = myExpenses.filter(e => e.groupId === g.id).reduce((s, e) => s + e.amount, 0);
                   return (
                     <div key={g.id} className="group-list-item" onClick={() => navigate(`/groups/${g.id}`)}>
                       <div className="group-list-icon">{GROUP_CATEGORY_ICONS[g.category]}</div>
