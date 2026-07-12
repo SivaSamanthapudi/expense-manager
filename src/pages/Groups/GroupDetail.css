@@ -225,6 +225,23 @@ button:disabled {
   color: var(--text);
 }
 
+/* ── Payment history ── */
+.payment-history-list { display: flex; flex-direction: column; gap: 6px; }
+
+.payment-history-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--secondary);
+}
+.payment-history-row-you { background: #f0fdf4; border: 1px solid #bbf7d0; }
+
+.payment-history-avatars { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.payment-history-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.payment-history-amount { font-size: 13px; font-weight: 700; color: #10b981; flex-shrink: 0; }
+
 /* ── "Not found in SplitWise" banner ── */
 .member-not-found {
   display: flex;

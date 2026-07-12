@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
 import Modal from '../../components/modal/Modal';
-import { ExpenseCategory } from '../../types';
+import { ExpenseCategory, PaymentRecord, Member } from '../../types';
 import { simplifyDebts } from '../../utils/debtUtils';
 import { groupService, UserSuggestion } from '../../services/groupService';
 import './GroupDetail.css';
@@ -27,21 +27,31 @@ interface PendingMember {
 const GroupDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { groups, addMember, removeMember, refetch: refetchGroups } = useGroups();
-  const { expenses, deleteExpense } = useExpenses();
+  const { groups, addMember, removeMember } = useGroups();
+  const { expenses, deleteExpense, refetch: refetchExpenses } = useExpenses();
   const { user } = useAuth();
 
   const group = groups.find(g => g.id === id);
 
-  const canModifyExpense = (e: { paidByName: string; splits: { memberName: string }[] }) => {
+  const isSelfMember = (m: Member) =>
+    (user?.id && m.userId && m.userId === user.id) ||
+    (user?.email && m.email && m.email.toLowerCase() === user.email.toLowerCase()) ||
+    (m.name.toLowerCase() === user?.name?.toLowerCase());
+
+  const canModify = (e: { groupId: string }) => {
     if (!user) return false;
-    const name = user.name.toLowerCase();
-    return (
-      e.paidByName.toLowerCase().includes(name) ||
-      e.splits.some(s => s.memberName.toLowerCase().includes(name))
-    );
+    return groups.some(g => g.id === e.groupId && g.members.some(isSelfMember));
   };
 
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = date.toLocaleString('default', { month: 'short' });
+    const year = date.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+  
   // ── Modal state ──────────────────────────────────────────────────────────────
   const [memberModal, setMemberModal] = useState(false);
   const [memberAdding, setMemberAdding] = useState(false);
@@ -63,11 +73,35 @@ const GroupDetail = () => {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Payment modal state ──────────────────────────────────────────────────────
+  const [paymentModal, setPaymentModal] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ fromMemberId: '', toMemberId: '', amount: '' });
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentSuccess, setPaymentSuccess] = useState('');
+
+  // ── Payment history ──────────────────────────────────────────────────────────
+  const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([]);
+
+  const loadPaymentHistory = useCallback(async (groupId: string) => {
+    try {
+      const records = await groupService.getPayments(groupId);
+      setPaymentHistory(records);
+    } catch {
+      // non-fatal — history stays empty
+    }
+  }, []);
+
   // ── Other tab/error state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'expenses' | 'members' | 'balances'>('expenses');
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [expenseDeleteError, setExpenseDeleteError] = useState<string | null>(null);
+
+  // Load payment history whenever the group changes
+  useEffect(() => {
+    if (id) void loadPaymentHistory(id);
+  }, [id, loadPaymentHistory]);
 
   // Close suggestions on outside click
   useEffect(() => {
@@ -182,6 +216,43 @@ const GroupDetail = () => {
     }
   };
 
+  // ── Payment handler ──────────────────────────────────────────────────────────
+  const openPaymentModal = (fromMemberId: string, toMemberId: string) => {
+    setPaymentForm({ fromMemberId, toMemberId, amount: '' });
+    setPaymentError('');
+    setPaymentSuccess('');
+    setPaymentModal(true);
+  };
+
+  const closePaymentModal = () => {
+    setPaymentModal(false);
+    setPaymentForm({ fromMemberId: '', toMemberId: '', amount: '' });
+    setPaymentError('');
+    setPaymentSuccess('');
+    setPaymentSaving(false);
+  };
+
+  const handleRecordPayment = async () => {
+    const amt = parseFloat(paymentForm.amount);
+    if (!amt || amt <= 0) { setPaymentError('Enter a valid amount'); return; }
+    setPaymentSaving(true);
+    setPaymentError('');
+    try {
+      await groupService.recordPayment(
+        group!.id,
+        paymentForm.fromMemberId,
+        paymentForm.toMemberId,
+        amt
+      );
+      // Refresh expenses (updates balances everywhere) and payment history
+      await Promise.all([refetchExpenses(), loadPaymentHistory(group!.id)]);
+      closePaymentModal();
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : 'Failed to record payment');
+      setPaymentSaving(false);
+    }
+  };
+
   // ── Member / expense handlers ────────────────────────────────────────────────
   const handleRemoveMember = async (memberId: string, memberName: string) => {
     const hasUnsettledDebt = groupExpenses.some(e =>
@@ -241,7 +312,20 @@ const GroupDetail = () => {
       const split = e.splits.find(sp => sp.memberId === m.id);
       return s + (split?.amount ?? 0);
     }, 0);
-    return { id: m.id, name: m.name, avatar: m.avatar, email: m.email, paid, share, net: paid - share };
+    // Net: for each expense, sum what others still owe me (I paid) minus what I still owe others
+    let net = 0;
+    for (const e of groupExpenses) {
+      const isPayer = e.paidBy === m.id;
+      for (const split of e.splits) {
+        const remaining = split.paid ? 0 : split.amount - (split.paidAmount ?? 0);
+        if (split.memberId === m.id) {
+          if (!isPayer) net -= remaining;
+        } else if (isPayer) {
+          net += remaining;
+        }
+      }
+    }
+    return { id: m.id, name: m.name, avatar: m.avatar, email: m.email, paid, share, net };
   });
 
   const simplified = group.simplifyDebts
@@ -252,16 +336,38 @@ const GroupDetail = () => {
           .map(s => ({
             fromId: s.memberId, fromName: s.memberName,
             toId: expense.paidBy, toName: expense.paidByName,
-            amount: s.amount,
+            // Show remaining unpaid amount after any partial payment
+            amount: s.amount - (s.paidAmount ?? 0),
           }))
+          .filter(t => t.amount > 0.01)
       );
 
-  const selfMember = group.members.find(m => m.name.toLowerCase() === user?.name?.toLowerCase());
+  const selfMember = group.members.find(m =>
+    (user?.id && m.userId && m.userId === user.id) ||
+    (user?.email && m.email && m.email.toLowerCase() === user.email.toLowerCase()) ||
+    (m.name.toLowerCase() === user?.name?.toLowerCase())
+  );
   const youOwe = simplified.filter(t => t.fromId === selfMember?.id).reduce((s, t) => s + t.amount, 0);
   const owedToYou = simplified.filter(t => t.toId === selfMember?.id).reduce((s, t) => s + t.amount, 0);
 
   // "no match in system" state — search completed, results empty, query non-empty, no suggestions shown
   const noMatch = searchDone && searchQuery.trim().length >= 2 && suggestions.length === 0 && !showSuggestions;
+
+  // Members from other groups that aren't already in this group and aren't in the pending basket
+  const currentGroupEmails = new Set(group.members.map(m => m.email?.toLowerCase()).filter(Boolean));
+  const existingPool: { id: string; name: string; email: string; avatar: string }[] = [];
+  const seenEmails = new Set<string>();
+  groups.forEach(g => {
+    if (g.id === group.id) return;
+    g.members.forEach(m => {
+      const key = m.email?.toLowerCase();
+      if (key && !currentGroupEmails.has(key) && !seenEmails.has(key) &&
+          !pending.some(p => p.email?.toLowerCase() === key)) {
+        seenEmails.add(key);
+        existingPool.push({ id: m.id, name: m.name, email: m.email, avatar: m.avatar });
+      }
+    });
+  });
 
   return (
     <div className="page-content">
@@ -414,7 +520,7 @@ const GroupDetail = () => {
                     <div className="expense-row-icon">{CATEGORY_ICONS[e.category]}</div>
                     <div className="expense-row-info">
                       <p className="font-semibold text-sm">{e.title}</p>
-                      <p className="text-xs text-muted">Paid by {e.paidByName} · {e.date}</p>
+                      <p className="text-xs text-muted">Paid by {e.paidByName} · {formatDate(e.date)}</p>
                     </div>
                     <div className="expense-row-splits">
                       {e.splits.map(s => (
@@ -428,14 +534,14 @@ const GroupDetail = () => {
                       <button
                         className="btn btn-outline btn-sm"
                         onClick={() => navigate(`/expenses/edit/${e.id}`)}
-                        disabled={!canModifyExpense(e)}
-                        title={!canModifyExpense(e) ? 'You are not a participant in this expense' : ''}
+                        disabled={!canModify(e)}
+                        title={!canModify(e) ? 'You are not a participant in this expense' : ''}
                       >Edit</button>
                       <button
                         className="btn btn-danger btn-sm"
                         onClick={() => handleDeleteExpense(e.id)}
-                        disabled={!canModifyExpense(e)}
-                        title={!canModifyExpense(e) ? 'You are not a participant in this expense' : ''}
+                        disabled={!canModify(e)}
+                        title={!canModify(e) ? 'You are not a participant in this expense' : ''}
                       >Delete</button>
                     </div>
                   </div>
@@ -524,12 +630,50 @@ const GroupDetail = () => {
                         )}
                       </div>
                       <span className="settle-amount">₹{t.amount.toLocaleString()}</span>
+                      <button
+                        className="btn btn-sm btn-outline"
+                        style={{ flexShrink: 0, marginLeft: 8 }}
+                        onClick={() => openPaymentModal(t.fromId, t.toId)}
+                        title="Record payment"
+                      >
+                        💸 Pay
+                      </button>
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
+
+          {/* ── Payment History ── */}
+          {paymentHistory.length > 0 && (
+            <div className="card card-body mt-4">
+              <h4 className="font-semibold mb-3" style={{ fontSize: 14 }}>Payment History</h4>
+              <div className="payment-history-list">
+                {paymentHistory.map(p => {
+                  const isYou = p.fromMemberId === selfMember?.id || p.toMemberId === selfMember?.id;
+                  return (
+                    <div key={p.id} className={`payment-history-row ${isYou ? 'payment-history-row-you' : ''}`}>
+                      <div className="payment-history-avatars">
+                        <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${p.fromMemberName}`} alt={p.fromMemberName} className="avatar avatar-sm" />
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>→</span>
+                        <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${p.toMemberName}`} alt={p.toMemberName} className="avatar avatar-sm" />
+                      </div>
+                      <div className="payment-history-info">
+                        <span className="text-sm">
+                          <span className="font-semibold">{p.fromMemberId === selfMember?.id ? 'You' : p.fromMemberName.split(' ')[0]}</span>
+                          <span className="text-muted"> paid </span>
+                          <span className="font-semibold">{p.toMemberId === selfMember?.id ? 'You' : p.toMemberName.split(' ')[0]}</span>
+                        </span>
+                        <span className="text-xs text-muted">{formatDate(p.date)}</span>
+                      </div>
+                      <span className="payment-history-amount">₹{p.appliedAmount.toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -592,89 +736,158 @@ const GroupDetail = () => {
         </div>
       )}
 
-      {/* ── Add Members Modal ── */}
-      {(() => {
-        // Members from other groups not already in this group and not pending
-        const existingPoolEmails = new Set(
-          (group?.members ?? []).map(m => m.email?.toLowerCase()).filter(Boolean)
-        );
-        const existingPool: { id: string; name: string; email: string; avatar: string }[] = [];
-        const seen = new Set<string>();
-        groups.forEach(g => {
-          if (g.id === group?.id) return;
-          g.members.forEach(m => {
-            const key = m.email?.toLowerCase();
-            if (key && !existingPoolEmails.has(key) && !seen.has(key) &&
-                !pending.some(p => p.email?.toLowerCase() === key)) {
-              seen.add(key);
-              existingPool.push({ id: m.id, name: m.name, email: m.email, avatar: m.avatar });
-            }
-          });
-        });
+      {/* ── Record Payment Modal ── */}
+      <Modal
+        isOpen={paymentModal}
+        onClose={closePaymentModal}
+        title="Record Payment"
+        size="sm"
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={closePaymentModal} disabled={paymentSaving}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              onClick={handleRecordPayment}
+              disabled={paymentSaving || !paymentForm.amount}
+            >
+              {paymentSaving ? 'Recording…' : 'Record Payment'}
+            </button>
+          </>
+        }
+      >
+        {(() => {
+          const fromMember = group.members.find(m => m.id === paymentForm.fromMemberId);
+          const toMember   = group.members.find(m => m.id === paymentForm.toMemberId);
 
-        return (
-          <Modal
-            isOpen={memberModal}
-            onClose={closeMemberModal}
-            title="Add Members"
-            size="sm"
-            footer={
-              <>
-                <button className="btn btn-outline" onClick={closeMemberModal} disabled={memberAdding}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleAddMembers}
-                  disabled={memberAdding || pending.length === 0}
-                >
-                  {memberAdding ? 'Adding…' : `Add ${pending.length > 0 ? `${pending.length} ` : ''}Member${pending.length !== 1 ? 's' : ''}`}
-                </button>
-              </>
-            }
-          >
-            {/* ── Quick-pick from existing members in other groups ── */}
-            {existingPool.length > 0 && (
-              <div className="form-group">
-                <label className="form-label">Add from existing members</label>
-                <div className="existing-members-grid">
-                  {existingPool.map(m => {
-                    const picked = pending.some(p => p.email?.toLowerCase() === m.email?.toLowerCase());
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        className={`existing-member-chip ${picked ? 'picked' : ''}`}
-                        onClick={() => {
-                          if (picked) {
-                            setPending(prev => prev.filter(p => p.email?.toLowerCase() !== m.email?.toLowerCase()));
-                          } else {
-                            setPending(prev => [...prev, {
-                              key: m.id,
-                              name: m.name,
-                              email: m.email,
-                              avatar: m.avatar,
-                              isRegistered: true,
-                              locked: true,
-                            }]);
-                          }
-                        }}
-                      >
-                        <img src={m.avatar} alt={m.name} className="avatar avatar-sm" />
-                        <div className="existing-member-info">
-                          <span className="text-sm font-semibold">{m.name}</span>
-                          <span className="text-xs text-muted">{m.email}</span>
-                        </div>
-                        <span className="chip-check">{picked ? '✓' : '+'}</span>
-                      </button>
-                    );
-                  })}
+          // How much fromMember still owes toMember
+          const totalOwed = simplified
+            .filter(t => t.fromId === paymentForm.fromMemberId && t.toId === paymentForm.toMemberId)
+            .reduce((s, t) => s + t.amount, 0);
+
+          return (
+            <>
+              {/* Payment summary header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                background: 'var(--secondary)', borderRadius: 'var(--radius)',
+                padding: '12px 14px', marginBottom: 16,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <img src={fromMember?.avatar} alt={fromMember?.name} className="avatar avatar-sm" />
+                  <span className="text-sm font-semibold">{fromMember?.name ?? '—'}</span>
                 </div>
+                <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>→</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <img src={toMember?.avatar} alt={toMember?.name} className="avatar avatar-sm" />
+                  <span className="text-sm font-semibold">{toMember?.name ?? '—'}</span>
+                </div>
+                {totalOwed > 0 && (
+                  <span style={{ marginLeft: 'auto', fontWeight: 700, color: '#ef4444', fontSize: 14 }}>
+                    owes ₹{totalOwed.toLocaleString()}
+                  </span>
+                )}
               </div>
-            )}
 
-            {existingPool.length > 0 && <div className="divider" />}
+              {/* Amount input */}
+              <div className="form-group">
+                <label className="form-label">Payment Amount (₹) *</label>
+                <input
+                  className="form-control"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder={`Full amount: ₹${totalOwed.toLocaleString()}`}
+                  value={paymentForm.amount}
+                  onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                  autoFocus
+                />
+                {totalOwed > 0 && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => setPaymentForm(f => ({ ...f, amount: totalOwed.toString() }))}
+                    >
+                      Full ₹{totalOwed.toLocaleString()}
+                    </button>
+                    </div>
+                )}
+              </div>
 
-            {/* ── Search box ── */}
-            <div className="form-group" style={{ position: 'relative' }} ref={suggestionsRef}>
+              {paymentError   && <p className="form-error" style={{ marginTop: 8 }}>{paymentError}</p>}
+              {paymentSuccess && (
+                <p style={{ color: '#10b981', fontSize: 13, marginTop: 8, fontWeight: 500 }}>
+                  ✓ {paymentSuccess}
+                </p>
+              )}
+            </>
+          );
+        })()}
+      </Modal>
+
+      {/* ── Add Members Modal ── */}
+      <Modal
+        isOpen={memberModal}
+        onClose={closeMemberModal}
+        title="Add Members"
+        size="sm"
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={closeMemberModal} disabled={memberAdding}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              onClick={handleAddMembers}
+              disabled={memberAdding || pending.length === 0}
+            >
+              {memberAdding ? 'Adding…' : `Add ${pending.length > 0 ? `${pending.length} ` : ''}Member${pending.length !== 1 ? 's' : ''}`}
+            </button>
+          </>
+        }
+      >
+        {/* ── Quick-pick from members of other groups ── */}
+        {existingPool.length > 0 && (
+          <div className="form-group">
+            <label className="form-label">Add from existing members</label>
+            <div className="existing-members-grid">
+              {existingPool.map(m => {
+                const picked = pending.some(p => p.email?.toLowerCase() === m.email?.toLowerCase());
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`existing-member-chip ${picked ? 'picked' : ''}`}
+                    onClick={() => {
+                      if (picked) {
+                        setPending(prev => prev.filter(p => p.email?.toLowerCase() !== m.email?.toLowerCase()));
+                      } else {
+                        setPending(prev => [...prev, {
+                          key: m.id,
+                          name: m.name,
+                          email: m.email,
+                          avatar: m.avatar,
+                          isRegistered: true,
+                          locked: true,
+                        }]);
+                      }
+                    }}
+                  >
+                    <img src={m.avatar} alt={m.name} className="avatar avatar-sm" />
+                    <div className="existing-member-info">
+                      <span className="text-sm font-semibold">{m.name}</span>
+                      <span className="text-xs text-muted">{m.email}</span>
+                    </div>
+                    <span className="chip-check">{picked ? '✓' : '+'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {existingPool.length > 0 && <div className="divider" />}
+
+        {/* ── Search registered users ── */}
+        <div className="form-group" style={{ position: 'relative' }} ref={suggestionsRef}>
           <label className="form-label">Search by name or email</label>
           <input
             className="form-control"
@@ -684,8 +897,6 @@ const GroupDetail = () => {
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
             autoComplete="off"
           />
-
-          {/* Dropdown suggestions */}
           {showSuggestions && suggestions.length > 0 && (
             <div className="member-suggestions">
               {suggestions.map(u => (
@@ -707,7 +918,7 @@ const GroupDetail = () => {
           )}
         </div>
 
-        {/* ── "Not found in SplitWise" banner ── */}
+        {/* ── Not found in SplitWise ── */}
         {noMatch && !showManual && (
           <div className="member-not-found">
             <span className="member-not-found-text">
@@ -769,9 +980,7 @@ const GroupDetail = () => {
         {/* ── Pending basket ── */}
         {pending.length > 0 && (
           <div className="pending-members-section">
-            <p className="form-label" style={{ marginBottom: 8 }}>
-              To be added ({pending.length})
-            </p>
+            <p className="form-label" style={{ marginBottom: 8 }}>To be added ({pending.length})</p>
             <div className="pending-members-list">
               {pending.map(p => (
                 <div key={p.key} className={`pending-member-chip ${p.isRegistered ? 'registered' : 'unregistered'}`}>
@@ -779,26 +988,17 @@ const GroupDetail = () => {
                   <div className="pending-member-info">
                     <span className="pending-member-name">{p.name}</span>
                     {p.email && <span className="pending-member-email">{p.email}</span>}
-                    {!p.isRegistered && (
-                      <span className="pending-member-badge">Not in SplitWise · invite pending</span>
-                    )}
+                    {!p.isRegistered && <span className="pending-member-badge">Not in SplitWise · invite pending</span>}
                   </div>
-                  <button
-                    type="button"
-                    className="pending-member-remove"
-                    onClick={() => removePending(p.key)}
-                    title="Remove"
-                  >✕</button>
+                  <button type="button" className="pending-member-remove" onClick={() => removePending(p.key)} title="Remove">✕</button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-            {memberError && <p className="form-error" style={{ marginTop: 8 }}>{memberError}</p>}
-          </Modal>
-        );
-      })()}
+        {memberError && <p className="form-error" style={{ marginTop: 8 }}>{memberError}</p>}
+      </Modal>
     </div>
   );
 };

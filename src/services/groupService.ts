@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import { Group, Member } from '../types';
+import { Group, Member, PaymentRecord } from '../types';
 
 export interface UserSuggestion {
   id: string;
@@ -42,6 +42,25 @@ export const groupService = {
   async searchUsers(q: string): Promise<UserSuggestion[]> {
     if (!q.trim()) return [];
     const { data } = await apiClient.get<UserSuggestion[]>(`/users/search?q=${encodeURIComponent(q)}`);
+    return data;
+  },
+
+  async getPayments(groupId: string): Promise<PaymentRecord[]> {
+    const { data } = await apiClient.get<PaymentRecord[]>(`/groups/${groupId}/payments`);
+    return data;
+  },
+
+  async recordPayment(
+    groupId: string,
+    fromMemberId: string,
+    toMemberId: string,
+    amount: number
+  ): Promise<{ appliedAmount: number; leftover: number }> {
+    const { data } = await apiClient.patch(`/groups/${groupId}/payments`, {
+      fromMemberId,
+      toMemberId,
+      amount,
+    });
     return data;
   },
 };

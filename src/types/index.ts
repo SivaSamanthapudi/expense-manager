@@ -4,7 +4,7 @@ export const GroupCategory = {
   Food: 'food',
   Other: 'other',
 } as const;
-export type GroupCategory = typeof GroupCategory[keyof typeof GroupCategory];
+export type GroupCategory = (typeof GroupCategory)[keyof typeof GroupCategory];
 export const GROUP_CATEGORIES = Object.values(GroupCategory);
 
 export const ExpenseCategory = {
@@ -15,7 +15,8 @@ export const ExpenseCategory = {
   Utilities: 'utilities',
   Other: 'other',
 } as const;
-export type ExpenseCategory = typeof ExpenseCategory[keyof typeof ExpenseCategory];
+export type ExpenseCategory =
+  (typeof ExpenseCategory)[keyof typeof ExpenseCategory];
 export const EXPENSE_CATEGORIES = Object.values(ExpenseCategory);
 
 export interface AuthUser {
@@ -32,6 +33,7 @@ export interface Member {
   email: string;
   avatar: string;
   groupId: string;
+  userId?: string | null; // auth user id — set only for registered SplitWise users
 }
 
 export interface Group {
@@ -50,6 +52,19 @@ export interface ExpenseSplit {
   memberName: string;
   amount: number;
   paid: boolean;
+  paidAmount?: number;
+}
+
+export interface PaymentRecord {
+  id: string;
+  groupId: string;
+  fromMemberId: string;
+  fromMemberName: string;
+  toMemberId: string;
+  toMemberName: string;
+  amount: number;
+  appliedAmount: number;
+  date: string;
 }
 
 export interface Expense {
