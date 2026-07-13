@@ -81,20 +81,24 @@ const Groups = () => {
   const [newMember, setNewMember] = useState({ name: '', email: '' });
   const [memberError, setMemberError] = useState('');
 
-  // flat list of all unique existing members across all groups (for quick-add), with their canonical id
+  // flat list of all unique existing members across all groups (for quick-add)
+  // Dedup by userId for registered users, by email for guests
   const allExistingMembers: Omit<Member, 'groupId'>[] = [];
+  const seenUserIds = new Set<string>();
   const seenEmails = new Set<string>();
   groups.forEach((g) =>
     g.members.forEach((m) => {
-      if (!seenEmails.has(m.email)) {
-        seenEmails.add(m.email);
-        allExistingMembers.push({
-          id: m.id,
-          name: m.name,
-          email: m.email,
-          avatar: m.avatar,
-        });
-      }
+      const key = m.userId ?? m.email;
+      if (!key || seenUserIds.has(key) || seenEmails.has(m.email)) return;
+      if (m.userId) seenUserIds.add(m.userId);
+      else seenEmails.add(m.email);
+      allExistingMembers.push({
+        id: m.id,
+        name: m.name,
+        email: m.email,
+        avatar: m.avatar,
+        userId: m.userId,
+      });
     })
   );
 
@@ -169,38 +173,45 @@ const Groups = () => {
   };
 
   const toggleExistingMember = (m: Omit<Member, 'groupId'>) => {
-    const already = selectedMembers.some((s) => s.email === m.email);
-    if (already)
-      setSelectedMembers((prev) => prev.filter((s) => s.email !== m.email));
+    const matches = (s: Omit<Member, 'groupId'>) =>
+      m.userId ? s.userId === m.userId : s.email === m.email;
+    const already = selectedMembers.some(matches);
+    if (already) setSelectedMembers((prev) => prev.filter((s) => !matches(s)));
     else setSelectedMembers((prev) => [...prev, m]);
   };
 
   const handleAddNewMember = () => {
-    if (!newMember.name.trim()) {
+    const name = newMember.name.trim();
+    const email = newMember.email.trim().toLowerCase();
+    if (!name) {
       setMemberError('Name is required');
       return;
     }
-    if (!newMember.email.trim()) {
-      setMemberError('Email is required');
+    // Duplicate check: by email if provided, otherwise by name (best-effort for no-email guests)
+    if (email && selectedMembers.some((m) => m.email.toLowerCase() === email)) {
+      setMemberError('A member with this email is already in the list');
       return;
     }
-    if (selectedMembers.some((m) => m.email === newMember.email)) {
-      setMemberError('Already added');
+    if (
+      !email &&
+      selectedMembers.some(
+        (m) =>
+          !m.userId && !m.email && m.name.toLowerCase() === name.toLowerCase()
+      )
+    ) {
+      setMemberError('A guest with this name is already in the list');
       return;
     }
-    // Check if this email already exists in any group — reuse their id if so
-    const existing = allExistingMembers.find(
-      (m) => m.email.toLowerCase() === newMember.email.toLowerCase()
-    );
     setSelectedMembers((prev) => [
       ...prev,
       {
-        id: existing?.id ?? `new_${Date.now()}`,
-        name: newMember.name,
-        email: newMember.email,
-        avatar:
-          existing?.avatar ??
-          `https://api.dicebear.com/7.x/initials/svg?seed=${newMember.name}`,
+        id: `new_${Date.now()}`,
+        name,
+        email,
+        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+          name
+        )}`,
+        userId: null,
       },
     ]);
     setNewMember({ name: '', email: '' });
@@ -262,14 +273,9 @@ const Groups = () => {
             const groupExpenses = expenses.filter((e) => e.groupId === g.id);
             const total = groupExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-            // Balance for the logged-in user in this group
+            // Balance for the logged-in user in this group — match by userId only
             const selfMember = g.members.find(
-              (m) =>
-                (user?.id && m.userId && m.userId === user.id) ||
-                (user?.email &&
-                  m.email &&
-                  m.email.toLowerCase() === user.email.toLowerCase()) ||
-                m.name.toLowerCase() === user?.name?.toLowerCase()
+              (m) => !!user?.id && !!m.userId && m.userId === user.id
             );
             const balances = computeMemberBalances(g, expenses);
             const transactions = g.simplifyDebts
@@ -549,12 +555,14 @@ const Groups = () => {
                 <label className="form-label">Add from existing members</label>
                 <div className="existing-members-grid">
                   {allExistingMembers.map((m) => {
-                    const picked = selectedMembers.some(
-                      (s) => s.email === m.email
+                    const picked = selectedMembers.some((s) =>
+                      m.userId
+                        ? s.userId === m.userId
+                        : m.email && s.email === m.email
                     );
                     return (
                       <button
-                        key={m.email}
+                        key={m.userId ?? m.id}
                         type="button"
                         className={`existing-member-chip ${
                           picked ? 'picked' : ''
@@ -584,11 +592,11 @@ const Groups = () => {
 
             {/* Add a brand new member */}
             <div className="form-group">
-              <label className="form-label">Add new member</label>
+              <label className="form-label">Add unregistered guest</label>
               <div className="new-member-row">
                 <input
                   className="form-control"
-                  placeholder="Full name"
+                  placeholder="Full name *"
                   value={newMember.name}
                   onChange={(e) =>
                     setNewMember((f) => ({ ...f, name: e.target.value }))
@@ -597,7 +605,7 @@ const Groups = () => {
                 />
                 <input
                   className="form-control"
-                  placeholder="Email"
+                  placeholder="Email (optional)"
                   value={newMember.email}
                   onChange={(e) =>
                     setNewMember((f) => ({ ...f, email: e.target.value }))
@@ -622,7 +630,7 @@ const Groups = () => {
                   Selected ({selectedMembers.length})
                 </p>
                 {selectedMembers.map((m, i) => (
-                  <div key={m.email} className="selected-member-row">
+                  <div key={m.userId ?? m.id} className="selected-member-row">
                     <img
                       src={m.avatar}
                       alt={m.name}

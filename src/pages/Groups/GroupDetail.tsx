@@ -10,18 +10,23 @@ import { groupService, UserSuggestion } from '../../services/groupService';
 import './GroupDetail.css';
 
 const CATEGORY_ICONS: Record<ExpenseCategory, string> = {
-  food: '🍔', transport: '🚗', accommodation: '🏨',
-  entertainment: '🎬', utilities: '💡', other: '📦',
+  food: '🍔',
+  transport: '🚗',
+  accommodation: '🏨',
+  entertainment: '🎬',
+  utilities: '💡',
+  other: '📦',
 };
 
 // A pending entry in the "Add Members" modal
 interface PendingMember {
-  key: string;              // stable React key
+  key: string; // stable React key (userId for registered, timestamp for manual)
+  userId: string | null; // set for registered SplitWise users
   name: string;
   email: string;
   avatar: string;
-  isRegistered: boolean;    // false = not found in SplitWise
-  locked: boolean;          // true when picked from a suggestion (email can't be edited)
+  isRegistered: boolean; // false = not found in SplitWise
+  locked: boolean; // true when picked from a suggestion
 }
 
 const GroupDetail = () => {
@@ -31,16 +36,16 @@ const GroupDetail = () => {
   const { expenses, deleteExpense, refetch: refetchExpenses } = useExpenses();
   const { user } = useAuth();
 
-  const group = groups.find(g => g.id === id);
+  const group = groups.find((g) => g.id === id);
 
   const isSelfMember = (m: Member) =>
-    (user?.id && m.userId && m.userId === user.id) ||
-    (user?.email && m.email && m.email.toLowerCase() === user.email.toLowerCase()) ||
-    (m.name.toLowerCase() === user?.name?.toLowerCase());
+    !!user?.id && !!m.userId && m.userId === user.id;
 
   const canModify = (e: { groupId: string }) => {
     if (!user) return false;
-    return groups.some(g => g.id === e.groupId && g.members.some(isSelfMember));
+    return groups.some(
+      (g) => g.id === e.groupId && g.members.some(isSelfMember)
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -51,7 +56,7 @@ const GroupDetail = () => {
     const year = date.getFullYear();
     return `${day}-${month}-${year}`;
   };
-  
+
   // ── Modal state ──────────────────────────────────────────────────────────────
   const [memberModal, setMemberModal] = useState(false);
   const [memberAdding, setMemberAdding] = useState(false);
@@ -75,7 +80,11 @@ const GroupDetail = () => {
 
   // ── Payment modal state ──────────────────────────────────────────────────────
   const [paymentModal, setPaymentModal] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ fromMemberId: '', toMemberId: '', amount: '' });
+  const [paymentForm, setPaymentForm] = useState({
+    fromMemberId: '',
+    toMemberId: '',
+    amount: '',
+  });
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [paymentError, setPaymentError] = useState('');
   const [paymentSuccess, setPaymentSuccess] = useState('');
@@ -93,10 +102,14 @@ const GroupDetail = () => {
   }, []);
 
   // ── Other tab/error state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'expenses' | 'members' | 'balances'>('expenses');
+  const [activeTab, setActiveTab] = useState<
+    'expenses' | 'members' | 'balances'
+  >('expenses');
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [leaveError, setLeaveError] = useState<string | null>(null);
-  const [expenseDeleteError, setExpenseDeleteError] = useState<string | null>(null);
+  const [expenseDeleteError, setExpenseDeleteError] = useState<string | null>(
+    null
+  );
 
   // Load payment history whenever the group changes
   useEffect(() => {
@@ -106,7 +119,10 @@ const GroupDetail = () => {
   // Close suggestions on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(e.target as Node)
+      ) {
         setShowSuggestions(false);
       }
     };
@@ -120,15 +136,19 @@ const GroupDetail = () => {
     setShowSuggestions(false);
     setSearchDone(false);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (value.trim().length < 2) { setSuggestions([]); return; }
+    if (value.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
 
     searchTimeout.current = setTimeout(async () => {
       try {
         const results = await groupService.searchUsers(value.trim());
         // Exclude already-in-group members and already-pending members
-        const filtered = results.filter(u =>
-          !group?.members.some(m => m.email && m.email.toLowerCase() === u.email.toLowerCase()) &&
-          !pending.some(p => p.email && p.email.toLowerCase() === u.email.toLowerCase())
+        const filtered = results.filter(
+          (u) =>
+            !group?.members.some((m) => m.userId === u.id) &&
+            !pending.some((p) => p.userId === u.id)
         );
         setSuggestions(filtered);
         setShowSuggestions(filtered.length > 0);
@@ -142,14 +162,18 @@ const GroupDetail = () => {
 
   // Pick a registered user from suggestions → add to pending basket
   const pickSuggestion = (u: UserSuggestion) => {
-    setPending(prev => [...prev, {
-      key: u.id,
-      name: u.name,
-      email: u.email || u.mobile,
-      avatar: u.avatar,
-      isRegistered: true,
-      locked: true,
-    }]);
+    setPending((prev) => [
+      ...prev,
+      {
+        key: u.id,
+        userId: u.id,
+        name: u.name,
+        email: u.email || u.mobile,
+        avatar: u.avatar,
+        isRegistered: true,
+        locked: true,
+      },
+    ]);
     setSearchQuery('');
     setSuggestions([]);
     setShowSuggestions(false);
@@ -158,20 +182,26 @@ const GroupDetail = () => {
 
   // Remove from pending basket
   const removePending = (key: string) => {
-    setPending(prev => prev.filter(p => p.key !== key));
+    setPending((prev) => prev.filter((p) => p.key !== key));
   };
 
   // Add a manually-typed (unregistered) member
   const addManualMember = () => {
     if (!manualForm.name.trim()) return;
-    setPending(prev => [...prev, {
-      key: `manual_${Date.now()}`,
-      name: manualForm.name.trim(),
-      email: manualForm.email.trim(),
-      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(manualForm.name.trim())}`,
-      isRegistered: false,
-      locked: false,
-    }]);
+    setPending((prev) => [
+      ...prev,
+      {
+        key: `manual_${Date.now()}`,
+        userId: null,
+        name: manualForm.name.trim(),
+        email: manualForm.email.trim(),
+        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+          manualForm.name.trim()
+        )}`,
+        isRegistered: false,
+        locked: false,
+      },
+    ]);
     setManualForm({ name: '', email: '' });
     setShowManual(false);
     setSearchQuery('');
@@ -192,7 +222,10 @@ const GroupDetail = () => {
 
   // ── Batch add all pending members ────────────────────────────────────────────
   const handleAddMembers = async () => {
-    if (pending.length === 0) { setMemberError('Add at least one member'); return; }
+    if (pending.length === 0) {
+      setMemberError('Add at least one member');
+      return;
+    }
     setMemberAdding(true);
     setMemberError('');
     const errors: string[] = [];
@@ -203,9 +236,12 @@ const GroupDetail = () => {
           email: p.email,
           avatar: p.avatar,
           groupId: group!.id,
+          userId: p.userId,
         });
       } catch (err) {
-        errors.push(`${p.name}: ${err instanceof Error ? err.message : 'failed'}`);
+        errors.push(
+          `${p.name}: ${err instanceof Error ? err.message : 'failed'}`
+        );
       }
     }
     setMemberAdding(false);
@@ -234,7 +270,10 @@ const GroupDetail = () => {
 
   const handleRecordPayment = async () => {
     const amt = parseFloat(paymentForm.amount);
-    if (!amt || amt <= 0) { setPaymentError('Enter a valid amount'); return; }
+    if (!amt || amt <= 0) {
+      setPaymentError('Enter a valid amount');
+      return;
+    }
     setPaymentSaving(true);
     setPaymentError('');
     try {
@@ -246,27 +285,33 @@ const GroupDetail = () => {
       );
       // Refresh expenses (updates balances everywhere) and payment history
       await Promise.all([refetchExpenses(), loadPaymentHistory(group!.id)]);
-      closePaymentModal();
+      closePaymentModal(); // resets paymentSaving too
     } catch (err) {
-      setPaymentError(err instanceof Error ? err.message : 'Failed to record payment');
+      setPaymentError(
+        err instanceof Error ? err.message : 'Failed to record payment'
+      );
       setPaymentSaving(false);
     }
   };
 
   // ── Member / expense handlers ────────────────────────────────────────────────
   const handleRemoveMember = async (memberId: string, memberName: string) => {
-    const hasUnsettledDebt = groupExpenses.some(e =>
-      e.splits.some(s => s.memberId === memberId && !s.paid)
+    const hasUnsettledDebt = groupExpenses.some((e) =>
+      e.splits.some((s) => s.memberId === memberId && !s.paid)
     );
     if (hasUnsettledDebt) {
-      setRemoveError(`Cannot remove ${memberName} — they have unsettled debts. Settle all their splits first.`);
+      setRemoveError(
+        `Cannot remove ${memberName} — they have unsettled debts. Settle all their splits first.`
+      );
       return;
     }
     setRemoveError(null);
     try {
       void removeMember(memberId, group!.id);
     } catch (err) {
-      setRemoveError(err instanceof Error ? err.message : `Failed to remove ${memberName}`);
+      setRemoveError(
+        err instanceof Error ? err.message : `Failed to remove ${memberName}`
+      );
     }
   };
 
@@ -275,17 +320,21 @@ const GroupDetail = () => {
     try {
       void deleteExpense(expenseId);
     } catch (err) {
-      setExpenseDeleteError(err instanceof Error ? err.message : 'Failed to delete expense');
+      setExpenseDeleteError(
+        err instanceof Error ? err.message : 'Failed to delete expense'
+      );
     }
   };
 
   const handleLeaveGroup = () => {
     if (!selfMember) return;
-    const hasUnsettled = groupExpenses.some(e =>
-      e.splits.some(s => s.memberId === selfMember.id && !s.paid)
+    const hasUnsettled = groupExpenses.some((e) =>
+      e.splits.some((s) => s.memberId === selfMember.id && !s.paid)
     );
     if (hasUnsettled) {
-      setLeaveError('You have unsettled debts in this group. Clear all your payments before leaving.');
+      setLeaveError(
+        'You have unsettled debts in this group. Clear all your payments before leaving.'
+      );
       return;
     }
     void removeMember(selfMember.id, group!.id);
@@ -293,23 +342,31 @@ const GroupDetail = () => {
   };
 
   // ── Guard ────────────────────────────────────────────────────────────────────
-  if (!group) return (
-    <div className="page-content">
-      <div className="empty-state">
-        <div className="empty-icon">🔍</div>
-        <h3>Group not found</h3>
-        <button className="btn btn-primary" onClick={() => navigate('/groups')}>Back to Groups</button>
+  if (!group)
+    return (
+      <div className="page-content">
+        <div className="empty-state">
+          <div className="empty-icon">🔍</div>
+          <h3>Group not found</h3>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/groups')}
+          >
+            Back to Groups
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
 
-  const groupExpenses = expenses.filter(e => e.groupId === id);
+  const groupExpenses = expenses.filter((e) => e.groupId === id);
   const total = groupExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-  const memberBalances = group.members.map(m => {
-    const paid = groupExpenses.filter(e => e.paidBy === m.id).reduce((s, e) => s + e.amount, 0);
+  const memberBalances = group.members.map((m) => {
+    const paid = groupExpenses
+      .filter((e) => e.paidBy === m.id)
+      .reduce((s, e) => s + e.amount, 0);
     const share = groupExpenses.reduce((s, e) => {
-      const split = e.splits.find(sp => sp.memberId === m.id);
+      const split = e.splits.find((sp) => sp.memberId === m.id);
       return s + (split?.amount ?? 0);
     }, 0);
     // Net: for each expense, sum what others still owe me (I paid) minus what I still owe others
@@ -317,7 +374,9 @@ const GroupDetail = () => {
     for (const e of groupExpenses) {
       const isPayer = e.paidBy === m.id;
       for (const split of e.splits) {
-        const remaining = split.paid ? 0 : split.amount - (split.paidAmount ?? 0);
+        const remaining = split.paid
+          ? 0
+          : split.amount - (split.paidAmount ?? 0);
         if (split.memberId === m.id) {
           if (!isPayer) net -= remaining;
         } else if (isPayer) {
@@ -325,47 +384,100 @@ const GroupDetail = () => {
         }
       }
     }
-    return { id: m.id, name: m.name, avatar: m.avatar, email: m.email, paid, share, net };
+    return {
+      id: m.id,
+      name: m.name,
+      avatar: m.avatar,
+      email: m.email,
+      paid,
+      share,
+      net,
+    };
   });
 
   const simplified = group.simplifyDebts
     ? simplifyDebts(memberBalances)
-    : groupExpenses.flatMap(expense =>
+    : groupExpenses.flatMap((expense) =>
         expense.splits
-          .filter(s => !s.paid && s.memberId !== expense.paidBy)
-          .map(s => ({
-            fromId: s.memberId, fromName: s.memberName,
-            toId: expense.paidBy, toName: expense.paidByName,
+          .filter((s) => !s.paid && s.memberId !== expense.paidBy)
+          .map((s) => ({
+            fromId: s.memberId,
+            fromName: s.memberName,
+            toId: expense.paidBy,
+            toName: expense.paidByName,
             // Show remaining unpaid amount after any partial payment
             amount: s.amount - (s.paidAmount ?? 0),
           }))
-          .filter(t => t.amount > 0.01)
+          .filter((t) => t.amount > 0.01)
       );
 
-  const selfMember = group.members.find(m =>
-    (user?.id && m.userId && m.userId === user.id) ||
-    (user?.email && m.email && m.email.toLowerCase() === user.email.toLowerCase()) ||
-    (m.name.toLowerCase() === user?.name?.toLowerCase())
+  const selfMember = group.members.find(
+    (m) => !!user?.id && !!m.userId && m.userId === user.id
   );
-  const youOwe = simplified.filter(t => t.fromId === selfMember?.id).reduce((s, t) => s + t.amount, 0);
-  const owedToYou = simplified.filter(t => t.toId === selfMember?.id).reduce((s, t) => s + t.amount, 0);
+  const youOwe = simplified
+    .filter((t) => t.fromId === selfMember?.id)
+    .reduce((s, t) => s + t.amount, 0);
+  const owedToYou = simplified
+    .filter((t) => t.toId === selfMember?.id)
+    .reduce((s, t) => s + t.amount, 0);
 
   // "no match in system" state — search completed, results empty, query non-empty, no suggestions shown
-  const noMatch = searchDone && searchQuery.trim().length >= 2 && suggestions.length === 0 && !showSuggestions;
+  const noMatch =
+    searchDone &&
+    searchQuery.trim().length >= 2 &&
+    suggestions.length === 0 &&
+    !showSuggestions;
 
-  // Members from other groups that aren't already in this group and aren't in the pending basket
-  const currentGroupEmails = new Set(group.members.map(m => m.email?.toLowerCase()).filter(Boolean));
-  const existingPool: { id: string; name: string; email: string; avatar: string }[] = [];
-  const seenEmails = new Set<string>();
-  groups.forEach(g => {
+  // Members from other groups that can be added to this group.
+  // Registered users (userId set) are deduplicated by userId.
+  // Unregistered guests (no userId) are deduplicated by non-empty email; those with no email are skipped.
+  const currentGroupUserIds = new Set(
+    group.members.map((m) => m.userId).filter(Boolean)
+  );
+  const currentGroupEmails = new Set(
+    group.members
+      .filter((m) => !m.userId && m.email)
+      .map((m) => m.email.toLowerCase())
+  );
+  const existingPool: {
+    id: string;
+    name: string;
+    email: string;
+    avatar: string;
+    userId: string | null;
+  }[] = [];
+  const seenKeys = new Set<string>();
+  groups.forEach((g) => {
     if (g.id === group.id) return;
-    g.members.forEach(m => {
-      const key = m.email?.toLowerCase();
-      if (key && !currentGroupEmails.has(key) && !seenEmails.has(key) &&
-          !pending.some(p => p.email?.toLowerCase() === key)) {
-        seenEmails.add(key);
-        existingPool.push({ id: m.id, name: m.name, email: m.email, avatar: m.avatar });
-      }
+    g.members.forEach((m) => {
+      const dedupKey =
+        m.userId ?? (m.email ? `email:${m.email.toLowerCase()}` : null);
+      if (!dedupKey) return;
+      if (seenKeys.has(dedupKey)) return;
+      if (
+        m.userId
+          ? currentGroupUserIds.has(m.userId)
+          : m.email && currentGroupEmails.has(m.email.toLowerCase())
+      )
+        return;
+      if (
+        pending.some((p) =>
+          m.userId
+            ? p.key === m.userId
+            : p.email &&
+              m.email &&
+              p.email.toLowerCase() === m.email.toLowerCase()
+        )
+      )
+        return;
+      seenKeys.add(dedupKey);
+      existingPool.push({
+        id: m.id,
+        name: m.name,
+        email: m.email,
+        avatar: m.avatar,
+        userId: m.userId ?? null,
+      });
     });
   });
 
@@ -373,19 +485,33 @@ const GroupDetail = () => {
     <div className="page-content">
       <div className="page-header">
         <div className="flex items-center gap-3">
-          <button className="btn btn-outline btn-sm" onClick={() => navigate('/groups')}>← Back</button>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => navigate('/groups')}
+          >
+            ← Back
+          </button>
           <div>
             <h1 className="page-title">{group.name}</h1>
-            {group.description && <p className="page-subtitle">{group.description}</p>}
+            {group.description && (
+              <p className="page-subtitle">{group.description}</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           {selfMember && (
-            <button className="btn btn-outline btn-sm" style={{ color: '#ef4444', borderColor: '#ef4444' }} onClick={handleLeaveGroup}>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ color: '#ef4444', borderColor: '#ef4444' }}
+              onClick={handleLeaveGroup}
+            >
               🚪 Leave Group
             </button>
           )}
-          <button className="btn btn-primary" onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
+          >
             + Add Expense
           </button>
         </div>
@@ -394,7 +520,12 @@ const GroupDetail = () => {
       {leaveError && (
         <div className="remove-error-banner mb-4">
           ⚠️ {leaveError}
-          <button className="remove-error-close" onClick={() => setLeaveError(null)}>✕</button>
+          <button
+            className="remove-error-close"
+            onClick={() => setLeaveError(null)}
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -416,13 +547,19 @@ const GroupDetail = () => {
           <>
             <div className="mini-stat card card-body">
               <p className="text-muted text-sm">You Owe</p>
-              <p className="stat-value-sm" style={{ color: youOwe > 0 ? '#ef4444' : '#10b981' }}>
+              <p
+                className="stat-value-sm"
+                style={{ color: youOwe > 0 ? '#ef4444' : '#10b981' }}
+              >
                 ₹{youOwe.toLocaleString()}
               </p>
             </div>
             <div className="mini-stat card card-body">
               <p className="text-muted text-sm">Owed to You</p>
-              <p className="stat-value-sm" style={{ color: owedToYou > 0 ? '#10b981' : '#64748b' }}>
+              <p
+                className="stat-value-sm"
+                style={{ color: owedToYou > 0 ? '#10b981' : '#64748b' }}
+              >
                 ₹{owedToYou.toLocaleString()}
               </p>
             </div>
@@ -438,20 +575,34 @@ const GroupDetail = () => {
               <span className="debt-card-icon">💰</span>
               <div>
                 <h4 className="debt-card-title">Owed to You</h4>
-                <p className="debt-card-total">{owedToYou > 0 ? `₹${owedToYou.toLocaleString()} total` : 'Nothing owed'}</p>
+                <p className="debt-card-total">
+                  {owedToYou > 0
+                    ? `₹${owedToYou.toLocaleString()} total`
+                    : 'Nothing owed'}
+                </p>
               </div>
             </div>
-            {simplified.filter(t => t.toId === selfMember.id).length === 0 ? (
+            {simplified.filter((t) => t.toId === selfMember.id).length === 0 ? (
               <p className="debt-card-empty">You're all settled up! 🎉</p>
             ) : (
               <div className="debt-person-list">
-                {simplified.filter(t => t.toId === selfMember.id).map((t, i) => (
-                  <div key={i} className="debt-person-row">
-                    <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.fromName}`} alt={t.fromName} className="avatar avatar-sm" />
-                    <span className="debt-person-name">{t.fromName.split(' ')[0]}</span>
-                    <span className="debt-person-amount receive">₹{t.amount.toLocaleString()}</span>
-                  </div>
-                ))}
+                {simplified
+                  .filter((t) => t.toId === selfMember.id)
+                  .map((t, i) => (
+                    <div key={i} className="debt-person-row">
+                      <img
+                        src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.fromName}`}
+                        alt={t.fromName}
+                        className="avatar avatar-sm"
+                      />
+                      <span className="debt-person-name">
+                        {t.fromName.split(' ')[0]}
+                      </span>
+                      <span className="debt-person-amount receive">
+                        ₹{t.amount.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
               </div>
             )}
           </div>
@@ -461,20 +612,35 @@ const GroupDetail = () => {
               <span className="debt-card-icon">💳</span>
               <div>
                 <h4 className="debt-card-title">You Owe</h4>
-                <p className="debt-card-total">{youOwe > 0 ? `₹${youOwe.toLocaleString()} total` : 'Nothing owed'}</p>
+                <p className="debt-card-total">
+                  {youOwe > 0
+                    ? `₹${youOwe.toLocaleString()} total`
+                    : 'Nothing owed'}
+                </p>
               </div>
             </div>
-            {simplified.filter(t => t.fromId === selfMember.id).length === 0 ? (
+            {simplified.filter((t) => t.fromId === selfMember.id).length ===
+            0 ? (
               <p className="debt-card-empty">You don't owe anyone! 🎉</p>
             ) : (
               <div className="debt-person-list">
-                {simplified.filter(t => t.fromId === selfMember.id).map((t, i) => (
-                  <div key={i} className="debt-person-row">
-                    <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.toName}`} alt={t.toName} className="avatar avatar-sm" />
-                    <span className="debt-person-name">{t.toName.split(' ')[0]}</span>
-                    <span className="debt-person-amount owe">₹{t.amount.toLocaleString()}</span>
-                  </div>
-                ))}
+                {simplified
+                  .filter((t) => t.fromId === selfMember.id)
+                  .map((t, i) => (
+                    <div key={i} className="debt-person-row">
+                      <img
+                        src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.toName}`}
+                        alt={t.toName}
+                        className="avatar avatar-sm"
+                      />
+                      <span className="debt-person-name">
+                        {t.toName.split(' ')[0]}
+                      </span>
+                      <span className="debt-person-amount owe">
+                        ₹{t.amount.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
               </div>
             )}
           </div>
@@ -483,13 +649,22 @@ const GroupDetail = () => {
 
       {/* ── Tabs ── */}
       <div className="tabs mb-4">
-        <button className={`tab ${activeTab === 'expenses' ? 'tab-active' : ''}`} onClick={() => setActiveTab('expenses')}>
+        <button
+          className={`tab ${activeTab === 'expenses' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('expenses')}
+        >
           💰 Expenses ({groupExpenses.length})
         </button>
-        <button className={`tab ${activeTab === 'balances' ? 'tab-active' : ''}`} onClick={() => setActiveTab('balances')}>
+        <button
+          className={`tab ${activeTab === 'balances' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('balances')}
+        >
           ⚖️ Balances
         </button>
-        <button className={`tab ${activeTab === 'members' ? 'tab-active' : ''}`} onClick={() => setActiveTab('members')}>
+        <button
+          className={`tab ${activeTab === 'members' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('members')}
+        >
           👥 Members ({group.members.length})
         </button>
       </div>
@@ -498,9 +673,17 @@ const GroupDetail = () => {
       {activeTab === 'expenses' && (
         <div className="card">
           {expenseDeleteError && (
-            <div className="remove-error-banner" style={{ borderRadius: '12px 12px 0 0' }}>
+            <div
+              className="remove-error-banner"
+              style={{ borderRadius: '12px 12px 0 0' }}
+            >
               ⚠️ {expenseDeleteError}
-              <button className="remove-error-close" onClick={() => setExpenseDeleteError(null)}>✕</button>
+              <button
+                className="remove-error-close"
+                onClick={() => setExpenseDeleteError(null)}
+              >
+                ✕
+              </button>
             </div>
           )}
           <div className="card-body">
@@ -509,40 +692,66 @@ const GroupDetail = () => {
                 <div className="empty-icon">💸</div>
                 <h3>No expenses yet</h3>
                 <p>Add the first expense to this group</p>
-                <button className="btn btn-primary" onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
+                >
                   Add Expense
                 </button>
               </div>
             ) : (
               <div className="expense-list">
-                {groupExpenses.map(e => (
+                {groupExpenses.map((e) => (
                   <div key={e.id} className="expense-row">
-                    <div className="expense-row-icon">{CATEGORY_ICONS[e.category]}</div>
+                    <div className="expense-row-icon">
+                      {CATEGORY_ICONS[e.category]}
+                    </div>
                     <div className="expense-row-info">
                       <p className="font-semibold text-sm">{e.title}</p>
-                      <p className="text-xs text-muted">Paid by {e.paidByName} · {formatDate(e.date)}</p>
+                      <p className="text-xs text-muted">
+                        Paid by {e.paidByName} · {formatDate(e.date)}
+                      </p>
                     </div>
                     <div className="expense-row-splits">
-                      {e.splits.map(s => (
-                        <span key={s.memberId} className={`split-chip ${s.paid ? 'split-paid' : 'split-unpaid'}`}>
+                      {e.splits.map((s) => (
+                        <span
+                          key={s.memberId}
+                          className={`split-chip ${
+                            s.paid ? 'split-paid' : 'split-unpaid'
+                          }`}
+                        >
                           {s.memberName.split(' ')[0]}: ₹{s.amount}
                         </span>
                       ))}
                     </div>
                     <div className="expense-row-actions">
-                      <span className="expense-amount">₹{e.amount.toLocaleString()}</span>
+                      <span className="expense-amount">
+                        ₹{e.amount.toLocaleString()}
+                      </span>
                       <button
                         className="btn btn-outline btn-sm"
                         onClick={() => navigate(`/expenses/edit/${e.id}`)}
                         disabled={!canModify(e)}
-                        title={!canModify(e) ? 'You are not a participant in this expense' : ''}
-                      >Edit</button>
+                        title={
+                          !canModify(e)
+                            ? 'You are not a participant in this expense'
+                            : ''
+                        }
+                      >
+                        Edit
+                      </button>
                       <button
                         className="btn btn-danger btn-sm"
                         onClick={() => handleDeleteExpense(e.id)}
                         disabled={!canModify(e)}
-                        title={!canModify(e) ? 'You are not a participant in this expense' : ''}
-                      >Delete</button>
+                        title={
+                          !canModify(e)
+                            ? 'You are not a participant in this expense'
+                            : ''
+                        }
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -561,24 +770,50 @@ const GroupDetail = () => {
               <p className="text-muted text-sm">No members yet</p>
             ) : (
               <div className="balance-list">
-                {memberBalances.map(m => (
-                  <div key={m.id} className={`balance-row ${m.id === selfMember?.id ? 'balance-row-self' : ''}`}>
-                    <img src={m.avatar} alt={m.name} className="avatar avatar-sm" />
+                {memberBalances.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`balance-row ${
+                      m.id === selfMember?.id ? 'balance-row-self' : ''
+                    }`}
+                  >
+                    <img
+                      src={m.avatar}
+                      alt={m.name}
+                      className="avatar avatar-sm"
+                    />
                     <div className="balance-member-info">
                       <p className="text-sm font-semibold">
                         {m.name}
-                        {m.id === selfMember?.id && <span className="self-tag">you</span>}
+                        {m.id === selfMember?.id && (
+                          <span className="self-tag">you</span>
+                        )}
                       </p>
                       <div className="balance-bars">
-                        <span className="text-xs" style={{ color: '#10b981' }}>paid ₹{m.paid.toLocaleString()}</span>
+                        <span className="text-xs" style={{ color: '#10b981' }}>
+                          paid ₹{m.paid.toLocaleString()}
+                        </span>
                         <span className="text-xs text-muted">·</span>
-                        <span className="text-xs" style={{ color: '#ef4444' }}>share ₹{m.share.toLocaleString()}</span>
+                        <span className="text-xs" style={{ color: '#ef4444' }}>
+                          share ₹{m.share.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                     <div className="balance-net">
-                      <span className={`balance-net-value ${m.net > 0 ? 'net-positive' : m.net < 0 ? 'net-negative' : 'net-zero'}`}>
-                        {m.net > 0 ? `gets back ₹${m.net.toLocaleString()}` :
-                         m.net < 0 ? `owes ₹${Math.abs(m.net).toLocaleString()}` : 'settled up'}
+                      <span
+                        className={`balance-net-value ${
+                          m.net > 0
+                            ? 'net-positive'
+                            : m.net < 0
+                            ? 'net-negative'
+                            : 'net-zero'
+                        }`}
+                      >
+                        {m.net > 0
+                          ? `gets back ₹${m.net.toLocaleString()}`
+                          : m.net < 0
+                          ? `owes ₹${Math.abs(m.net).toLocaleString()}`
+                          : 'settled up'}
                       </span>
                     </div>
                   </div>
@@ -592,18 +827,24 @@ const GroupDetail = () => {
               <div>
                 <h3 className="font-semibold">Settle Up</h3>
                 <p className="text-xs text-muted mt-1">
-                  {group.simplifyDebts ? 'Minimum transactions to clear all debts' : 'Per-expense payment breakdown'}
+                  {group.simplifyDebts
+                    ? 'Minimum transactions to clear all debts'
+                    : 'Per-expense payment breakdown'}
                 </p>
               </div>
               {simplified.length > 0 && (
-                <span className="badge badge-primary">{simplified.length} payment{simplified.length > 1 ? 's' : ''}</span>
+                <span className="badge badge-primary">
+                  {simplified.length} payment{simplified.length > 1 ? 's' : ''}
+                </span>
               )}
             </div>
             {simplified.length === 0 ? (
               <div className="settled-state">
                 <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
                 <p className="font-semibold">All settled up!</p>
-                <p className="text-sm text-muted mt-1">No outstanding debts in this group</p>
+                <p className="text-sm text-muted mt-1">
+                  No outstanding debts in this group
+                </p>
               </div>
             ) : (
               <div className="settle-list">
@@ -611,25 +852,56 @@ const GroupDetail = () => {
                   const isYouPaying = t.fromId === selfMember?.id;
                   const isYouReceiving = t.toId === selfMember?.id;
                   return (
-                    <div key={i} className={`settle-row ${isYouPaying ? 'settle-you-pay' : isYouReceiving ? 'settle-you-receive' : ''}`}>
+                    <div
+                      key={i}
+                      className={`settle-row ${
+                        isYouPaying
+                          ? 'settle-you-pay'
+                          : isYouReceiving
+                          ? 'settle-you-receive'
+                          : ''
+                      }`}
+                    >
                       <div className="settle-avatars">
-                        <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.fromName}`} alt={t.fromName} className="avatar avatar-sm" />
+                        <img
+                          src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.fromName}`}
+                          alt={t.fromName}
+                          className="avatar avatar-sm"
+                        />
                         <span className="settle-arrow">→</span>
-                        <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.toName}`} alt={t.toName} className="avatar avatar-sm" />
+                        <img
+                          src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.toName}`}
+                          alt={t.toName}
+                          className="avatar avatar-sm"
+                        />
                       </div>
                       <div className="settle-info">
                         <p className="text-sm">
-                          <span className="font-semibold">{isYouPaying ? 'You' : t.fromName.split(' ')[0]}</span>
+                          <span className="font-semibold">
+                            {isYouPaying ? 'You' : t.fromName.split(' ')[0]}
+                          </span>
                           <span className="text-muted"> pays </span>
-                          <span className="font-semibold">{isYouReceiving ? 'You' : t.toName.split(' ')[0]}</span>
+                          <span className="font-semibold">
+                            {isYouReceiving ? 'You' : t.toName.split(' ')[0]}
+                          </span>
                         </p>
                         {(isYouPaying || isYouReceiving) && (
-                          <span className={`text-xs ${isYouPaying ? 'you-pay-label' : 'you-receive-label'}`}>
-                            {isYouPaying ? '↑ you owe this' : '↓ you receive this'}
+                          <span
+                            className={`text-xs ${
+                              isYouPaying
+                                ? 'you-pay-label'
+                                : 'you-receive-label'
+                            }`}
+                          >
+                            {isYouPaying
+                              ? '↑ you owe this'
+                              : '↓ you receive this'}
                           </span>
                         )}
                       </div>
-                      <span className="settle-amount">₹{t.amount.toLocaleString()}</span>
+                      <span className="settle-amount">
+                        ₹{t.amount.toLocaleString()}
+                      </span>
                       <button
                         className="btn btn-sm btn-outline"
                         style={{ flexShrink: 0, marginLeft: 8 }}
@@ -648,26 +920,59 @@ const GroupDetail = () => {
           {/* ── Payment History ── */}
           {paymentHistory.length > 0 && (
             <div className="card card-body mt-4">
-              <h4 className="font-semibold mb-3" style={{ fontSize: 14 }}>Payment History</h4>
+              <h4 className="font-semibold mb-3" style={{ fontSize: 14 }}>
+                Payment History
+              </h4>
               <div className="payment-history-list">
-                {paymentHistory.map(p => {
-                  const isYou = p.fromMemberId === selfMember?.id || p.toMemberId === selfMember?.id;
+                {paymentHistory.map((p) => {
+                  const isYou =
+                    p.fromMemberId === selfMember?.id ||
+                    p.toMemberId === selfMember?.id;
                   return (
-                    <div key={p.id} className={`payment-history-row ${isYou ? 'payment-history-row-you' : ''}`}>
+                    <div
+                      key={p.id}
+                      className={`payment-history-row ${
+                        isYou ? 'payment-history-row-you' : ''
+                      }`}
+                    >
                       <div className="payment-history-avatars">
-                        <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${p.fromMemberName}`} alt={p.fromMemberName} className="avatar avatar-sm" />
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>→</span>
-                        <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${p.toMemberName}`} alt={p.toMemberName} className="avatar avatar-sm" />
+                        <img
+                          src={`https://api.dicebear.com/7.x/initials/svg?seed=${p.fromMemberName}`}
+                          alt={p.fromMemberName}
+                          className="avatar avatar-sm"
+                        />
+                        <span
+                          style={{ fontSize: 12, color: 'var(--text-muted)' }}
+                        >
+                          →
+                        </span>
+                        <img
+                          src={`https://api.dicebear.com/7.x/initials/svg?seed=${p.toMemberName}`}
+                          alt={p.toMemberName}
+                          className="avatar avatar-sm"
+                        />
                       </div>
                       <div className="payment-history-info">
                         <span className="text-sm">
-                          <span className="font-semibold">{p.fromMemberId === selfMember?.id ? 'You' : p.fromMemberName.split(' ')[0]}</span>
+                          <span className="font-semibold">
+                            {p.fromMemberId === selfMember?.id
+                              ? 'You'
+                              : p.fromMemberName.split(' ')[0]}
+                          </span>
                           <span className="text-muted"> paid </span>
-                          <span className="font-semibold">{p.toMemberId === selfMember?.id ? 'You' : p.toMemberName.split(' ')[0]}</span>
+                          <span className="font-semibold">
+                            {p.toMemberId === selfMember?.id
+                              ? 'You'
+                              : p.toMemberName.split(' ')[0]}
+                          </span>
                         </span>
-                        <span className="text-xs text-muted">{formatDate(p.date)}</span>
+                        <span className="text-xs text-muted">
+                          {formatDate(p.date)}
+                        </span>
                       </div>
-                      <span className="payment-history-amount">₹{p.appliedAmount.toLocaleString()}</span>
+                      <span className="payment-history-amount">
+                        ₹{p.appliedAmount.toLocaleString()}
+                      </span>
                     </div>
                   );
                 })}
@@ -681,13 +986,26 @@ const GroupDetail = () => {
       {activeTab === 'members' && (
         <div>
           <div className="flex justify-between items-center mb-4">
-            <span className="text-sm text-muted">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</span>
-            <button className="btn btn-primary btn-sm" onClick={() => setMemberModal(true)}>+ Add Member</button>
+            <span className="text-sm text-muted">
+              {group.members.length} member
+              {group.members.length !== 1 ? 's' : ''}
+            </span>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => setMemberModal(true)}
+            >
+              + Add Member
+            </button>
           </div>
           {removeError && (
             <div className="remove-error-banner">
               ⚠️ {removeError}
-              <button className="remove-error-close" onClick={() => setRemoveError(null)}>✕</button>
+              <button
+                className="remove-error-close"
+                onClick={() => setRemoveError(null)}
+              >
+                ✕
+              </button>
             </div>
           )}
           {group.members.length === 0 ? (
@@ -695,36 +1013,58 @@ const GroupDetail = () => {
               <div className="empty-state">
                 <div className="empty-icon">👤</div>
                 <h3>No members yet</h3>
-                <button className="btn btn-primary" onClick={() => setMemberModal(true)}>Add Member</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setMemberModal(true)}
+                >
+                  Add Member
+                </button>
               </div>
             </div>
           ) : (
             <div className="member-grid">
-              {memberBalances.map(m => (
+              {memberBalances.map((m) => (
                 <div key={m.id} className="member-card card card-body">
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-3">
-                      <img src={m.avatar} alt={m.name} className="avatar avatar-lg" />
+                      <img
+                        src={m.avatar}
+                        alt={m.name}
+                        className="avatar avatar-lg"
+                      />
                       <div>
                         <p className="font-semibold">{m.name}</p>
                         <p className="text-xs text-muted">{m.email}</p>
                       </div>
                     </div>
-                    <button className="btn-icon" onClick={() => handleRemoveMember(m.id, m.name)} title="Remove member">🗑️</button>
+                    <button
+                      className="btn-icon"
+                      onClick={() => handleRemoveMember(m.id, m.name)}
+                      title="Remove member"
+                    >
+                      🗑️
+                    </button>
                   </div>
                   <div className="divider" />
                   <div className="flex justify-between text-sm">
                     <div>
                       <p className="text-muted text-xs">Paid</p>
-                      <p className="font-semibold" style={{ color: '#10b981' }}>₹{m.paid.toLocaleString()}</p>
+                      <p className="font-semibold" style={{ color: '#10b981' }}>
+                        ₹{m.paid.toLocaleString()}
+                      </p>
                     </div>
                     <div>
                       <p className="text-muted text-xs">Share</p>
-                      <p className="font-semibold" style={{ color: '#ef4444' }}>₹{m.share.toLocaleString()}</p>
+                      <p className="font-semibold" style={{ color: '#ef4444' }}>
+                        ₹{m.share.toLocaleString()}
+                      </p>
                     </div>
                     <div>
                       <p className="text-muted text-xs">Net</p>
-                      <p className="font-semibold" style={{ color: m.net >= 0 ? '#10b981' : '#ef4444' }}>
+                      <p
+                        className="font-semibold"
+                        style={{ color: m.net >= 0 ? '#10b981' : '#ef4444' }}
+                      >
                         {m.net >= 0 ? '+' : ''}₹{m.net.toLocaleString()}
                       </p>
                     </div>
@@ -744,7 +1084,13 @@ const GroupDetail = () => {
         size="sm"
         footer={
           <>
-            <button className="btn btn-outline" onClick={closePaymentModal} disabled={paymentSaving}>Cancel</button>
+            <button
+              className="btn btn-outline"
+              onClick={closePaymentModal}
+              disabled={paymentSaving}
+            >
+              Cancel
+            </button>
             <button
               className="btn btn-primary"
               onClick={handleRecordPayment}
@@ -756,33 +1102,68 @@ const GroupDetail = () => {
         }
       >
         {(() => {
-          const fromMember = group.members.find(m => m.id === paymentForm.fromMemberId);
-          const toMember   = group.members.find(m => m.id === paymentForm.toMemberId);
+          const fromMember = group.members.find(
+            (m) => m.id === paymentForm.fromMemberId
+          );
+          const toMember = group.members.find(
+            (m) => m.id === paymentForm.toMemberId
+          );
 
           // How much fromMember still owes toMember
           const totalOwed = simplified
-            .filter(t => t.fromId === paymentForm.fromMemberId && t.toId === paymentForm.toMemberId)
+            .filter(
+              (t) =>
+                t.fromId === paymentForm.fromMemberId &&
+                t.toId === paymentForm.toMemberId
+            )
             .reduce((s, t) => s + t.amount, 0);
 
           return (
             <>
               {/* Payment summary header */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                background: 'var(--secondary)', borderRadius: 'var(--radius)',
-                padding: '12px 14px', marginBottom: 16,
-              }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  background: 'var(--secondary)',
+                  borderRadius: 'var(--radius)',
+                  padding: '12px 14px',
+                  marginBottom: 16,
+                }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <img src={fromMember?.avatar} alt={fromMember?.name} className="avatar avatar-sm" />
-                  <span className="text-sm font-semibold">{fromMember?.name ?? '—'}</span>
+                  <img
+                    src={fromMember?.avatar}
+                    alt={fromMember?.name}
+                    className="avatar avatar-sm"
+                  />
+                  <span className="text-sm font-semibold">
+                    {fromMember?.name ?? '—'}
+                  </span>
                 </div>
-                <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>→</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>
+                  →
+                </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <img src={toMember?.avatar} alt={toMember?.name} className="avatar avatar-sm" />
-                  <span className="text-sm font-semibold">{toMember?.name ?? '—'}</span>
+                  <img
+                    src={toMember?.avatar}
+                    alt={toMember?.name}
+                    className="avatar avatar-sm"
+                  />
+                  <span className="text-sm font-semibold">
+                    {toMember?.name ?? '—'}
+                  </span>
                 </div>
                 {totalOwed > 0 && (
-                  <span style={{ marginLeft: 'auto', fontWeight: 700, color: '#ef4444', fontSize: 14 }}>
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontWeight: 700,
+                      color: '#ef4444',
+                      fontSize: 14,
+                    }}
+                  >
                     owes ₹{totalOwed.toLocaleString()}
                   </span>
                 )}
@@ -798,7 +1179,9 @@ const GroupDetail = () => {
                   step="0.01"
                   placeholder={`Full amount: ₹${totalOwed.toLocaleString()}`}
                   value={paymentForm.amount}
-                  onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, amount: e.target.value }))
+                  }
                   autoFocus
                 />
                 {totalOwed > 0 && (
@@ -806,17 +1189,33 @@ const GroupDetail = () => {
                     <button
                       type="button"
                       className="btn btn-outline btn-sm"
-                      onClick={() => setPaymentForm(f => ({ ...f, amount: totalOwed.toString() }))}
+                      onClick={() =>
+                        setPaymentForm((f) => ({
+                          ...f,
+                          amount: totalOwed.toString(),
+                        }))
+                      }
                     >
                       Full ₹{totalOwed.toLocaleString()}
                     </button>
-                    </div>
+                  </div>
                 )}
               </div>
 
-              {paymentError   && <p className="form-error" style={{ marginTop: 8 }}>{paymentError}</p>}
+              {paymentError && (
+                <p className="form-error" style={{ marginTop: 8 }}>
+                  {paymentError}
+                </p>
+              )}
               {paymentSuccess && (
-                <p style={{ color: '#10b981', fontSize: 13, marginTop: 8, fontWeight: 500 }}>
+                <p
+                  style={{
+                    color: '#10b981',
+                    fontSize: 13,
+                    marginTop: 8,
+                    fontWeight: 500,
+                  }}
+                >
                   ✓ {paymentSuccess}
                 </p>
               )}
@@ -833,13 +1232,23 @@ const GroupDetail = () => {
         size="sm"
         footer={
           <>
-            <button className="btn btn-outline" onClick={closeMemberModal} disabled={memberAdding}>Cancel</button>
+            <button
+              className="btn btn-outline"
+              onClick={closeMemberModal}
+              disabled={memberAdding}
+            >
+              Cancel
+            </button>
             <button
               className="btn btn-primary"
               onClick={handleAddMembers}
               disabled={memberAdding || pending.length === 0}
             >
-              {memberAdding ? 'Adding…' : `Add ${pending.length > 0 ? `${pending.length} ` : ''}Member${pending.length !== 1 ? 's' : ''}`}
+              {memberAdding
+                ? 'Adding…'
+                : `Add ${pending.length > 0 ? `${pending.length} ` : ''}Member${
+                    pending.length !== 1 ? 's' : ''
+                  }`}
             </button>
           </>
         }
@@ -849,29 +1258,55 @@ const GroupDetail = () => {
           <div className="form-group">
             <label className="form-label">Add from existing members</label>
             <div className="existing-members-grid">
-              {existingPool.map(m => {
-                const picked = pending.some(p => p.email?.toLowerCase() === m.email?.toLowerCase());
+              {existingPool.map((m) => {
+                // Match pending by userId if available, otherwise by email
+                const picked = pending.some((p) =>
+                  m.userId
+                    ? p.key === m.userId
+                    : p.email &&
+                      m.email &&
+                      p.email.toLowerCase() === m.email.toLowerCase()
+                );
                 return (
                   <button
-                    key={m.id}
+                    key={m.userId ?? m.id}
                     type="button"
                     className={`existing-member-chip ${picked ? 'picked' : ''}`}
                     onClick={() => {
                       if (picked) {
-                        setPending(prev => prev.filter(p => p.email?.toLowerCase() !== m.email?.toLowerCase()));
+                        setPending((prev) =>
+                          prev.filter((p) =>
+                            m.userId
+                              ? p.key !== m.userId
+                              : !(
+                                  p.email &&
+                                  m.email &&
+                                  p.email.toLowerCase() ===
+                                    m.email.toLowerCase()
+                                )
+                          )
+                        );
                       } else {
-                        setPending(prev => [...prev, {
-                          key: m.id,
-                          name: m.name,
-                          email: m.email,
-                          avatar: m.avatar,
-                          isRegistered: true,
-                          locked: true,
-                        }]);
+                        setPending((prev) => [
+                          ...prev,
+                          {
+                            key: m.userId ?? m.id,
+                            userId: m.userId,
+                            name: m.name,
+                            email: m.email,
+                            avatar: m.avatar,
+                            isRegistered: !!m.userId,
+                            locked: true,
+                          },
+                        ]);
                       }
                     }}
                   >
-                    <img src={m.avatar} alt={m.name} className="avatar avatar-sm" />
+                    <img
+                      src={m.avatar}
+                      alt={m.name}
+                      className="avatar avatar-sm"
+                    />
                     <div className="existing-member-info">
                       <span className="text-sm font-semibold">{m.name}</span>
                       <span className="text-xs text-muted">{m.email}</span>
@@ -887,29 +1322,40 @@ const GroupDetail = () => {
         {existingPool.length > 0 && <div className="divider" />}
 
         {/* ── Search registered users ── */}
-        <div className="form-group" style={{ position: 'relative' }} ref={suggestionsRef}>
+        <div
+          className="form-group"
+          style={{ position: 'relative' }}
+          ref={suggestionsRef}
+        >
           <label className="form-label">Search by name or email</label>
           <input
             className="form-control"
             placeholder="Type to search registered users…"
             value={searchQuery}
-            onChange={e => handleSearchChange(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
             autoComplete="off"
           />
           {showSuggestions && suggestions.length > 0 && (
             <div className="member-suggestions">
-              {suggestions.map(u => (
+              {suggestions.map((u) => (
                 <button
                   key={u.id}
                   type="button"
                   className="member-suggestion-item"
                   onMouseDown={() => pickSuggestion(u)}
                 >
-                  <img src={u.avatar} alt={u.name} className="avatar" style={{ width: 28, height: 28, flexShrink: 0 }} />
+                  <img
+                    src={u.avatar}
+                    alt={u.name}
+                    className="avatar"
+                    style={{ width: 28, height: 28, flexShrink: 0 }}
+                  />
                   <div className="member-suggestion-info">
                     <span className="member-suggestion-name">{u.name}</span>
-                    <span className="member-suggestion-sub">{u.email || u.mobile}</span>
+                    <span className="member-suggestion-sub">
+                      {u.email || u.mobile}
+                    </span>
                   </div>
                   <span className="member-suggestion-add">+ Add</span>
                 </button>
@@ -922,8 +1368,8 @@ const GroupDetail = () => {
         {noMatch && !showManual && (
           <div className="member-not-found">
             <span className="member-not-found-text">
-              <span className="member-not-found-icon">🔍</span>
-              "<strong>{searchQuery}</strong>" is not registered in SplitWise
+              <span className="member-not-found-icon">🔍</span>"
+              <strong>{searchQuery}</strong>" is not registered in SplitWise
             </span>
             <div className="member-not-found-actions">
               <button
@@ -946,15 +1392,28 @@ const GroupDetail = () => {
         {showManual && (
           <div className="manual-member-form">
             <div className="manual-member-header">
-              <span className="text-sm font-semibold">Add unregistered member</span>
-              <button type="button" className="btn-icon" onClick={() => { setShowManual(false); setManualForm({ name: '', email: '' }); }}>✕</button>
+              <span className="text-sm font-semibold">
+                Add unregistered member
+              </span>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => {
+                  setShowManual(false);
+                  setManualForm({ name: '', email: '' });
+                }}
+              >
+                ✕
+              </button>
             </div>
             <div className="form-group" style={{ marginBottom: 8 }}>
               <input
                 className="form-control"
                 placeholder="Full name *"
                 value={manualForm.name}
-                onChange={e => setManualForm(f => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setManualForm((f) => ({ ...f, name: e.target.value }))
+                }
               />
             </div>
             <div className="form-group" style={{ marginBottom: 8 }}>
@@ -963,7 +1422,9 @@ const GroupDetail = () => {
                 type="email"
                 placeholder="Email (to send invite)"
                 value={manualForm.email}
-                onChange={e => setManualForm(f => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setManualForm((f) => ({ ...f, email: e.target.value }))
+                }
               />
             </div>
             <button
@@ -980,24 +1441,53 @@ const GroupDetail = () => {
         {/* ── Pending basket ── */}
         {pending.length > 0 && (
           <div className="pending-members-section">
-            <p className="form-label" style={{ marginBottom: 8 }}>To be added ({pending.length})</p>
+            <p className="form-label" style={{ marginBottom: 8 }}>
+              To be added ({pending.length})
+            </p>
             <div className="pending-members-list">
-              {pending.map(p => (
-                <div key={p.key} className={`pending-member-chip ${p.isRegistered ? 'registered' : 'unregistered'}`}>
-                  <img src={p.avatar} alt={p.name} className="avatar" style={{ width: 24, height: 24, flexShrink: 0 }} />
+              {pending.map((p) => (
+                <div
+                  key={p.key}
+                  className={`pending-member-chip ${
+                    p.isRegistered ? 'registered' : 'unregistered'
+                  }`}
+                >
+                  <img
+                    src={p.avatar}
+                    alt={p.name}
+                    className="avatar"
+                    style={{ width: 24, height: 24, flexShrink: 0 }}
+                  />
                   <div className="pending-member-info">
                     <span className="pending-member-name">{p.name}</span>
-                    {p.email && <span className="pending-member-email">{p.email}</span>}
-                    {!p.isRegistered && <span className="pending-member-badge">Not in SplitWise · invite pending</span>}
+                    {p.email && (
+                      <span className="pending-member-email">{p.email}</span>
+                    )}
+                    {!p.isRegistered && (
+                      <span className="pending-member-badge">
+                        Not in SplitWise · invite pending
+                      </span>
+                    )}
                   </div>
-                  <button type="button" className="pending-member-remove" onClick={() => removePending(p.key)} title="Remove">✕</button>
+                  <button
+                    type="button"
+                    className="pending-member-remove"
+                    onClick={() => removePending(p.key)}
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {memberError && <p className="form-error" style={{ marginTop: 8 }}>{memberError}</p>}
+        {memberError && (
+          <p className="form-error" style={{ marginTop: 8 }}>
+            {memberError}
+          </p>
+        )}
       </Modal>
     </div>
   );

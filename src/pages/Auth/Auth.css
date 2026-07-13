@@ -13,7 +13,7 @@
   padding: 40px;
   width: 100%;
   max-width: 440px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
 
 .auth-logo {
@@ -23,8 +23,14 @@
   margin-bottom: 6px;
 }
 
-.auth-logo span { font-size: 32px; }
-.auth-logo h1 { font-size: 28px; font-weight: 800; color: var(--primary); }
+.auth-logo span {
+  font-size: 32px;
+}
+.auth-logo h1 {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--primary);
+}
 
 .auth-tagline {
   color: var(--text-muted);
@@ -32,7 +38,9 @@
   margin-bottom: 28px;
 }
 
-.auth-form { margin-bottom: 20px; }
+.auth-form {
+  margin-bottom: 20px;
+}
 
 .auth-submit {
   margin-top: 8px;
@@ -51,7 +59,9 @@
   color: var(--primary);
   font-weight: 600;
 }
-.auth-switch a:hover { text-decoration: underline; }
+.auth-switch a:hover {
+  text-decoration: underline;
+}
 
 .auth-toggle {
   display: flex;
@@ -80,4 +90,91 @@
 .auth-toggle-btn:not(.active):hover {
   background: #edf2ff;
   color: var(--primary);
+}
+
+/* Linking progress steps shown during signup */
+.linking-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 12px 0 24px;
+}
+
+.linking-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  opacity: 0.4;
+  transition: opacity 0.3s;
+}
+
+.linking-step.active,
+.linking-step.done,
+.linking-step.failed {
+  opacity: 1;
+}
+
+.linking-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.linking-step.active .linking-icon {
+  background: #ede9fe;
+  color: var(--primary);
+  animation: linking-pulse 1.2s ease-in-out infinite;
+}
+
+.linking-step.done .linking-icon {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.linking-step.failed .linking-icon {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+@keyframes linking-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.linking-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-dark);
+  margin-bottom: 2px;
+}
+
+.linking-desc {
+  line-height: 1.4;
+}
+
+.linking-redirect {
+  text-align: center;
+  margin-top: 4px;
+  animation: fade-in 0.4s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

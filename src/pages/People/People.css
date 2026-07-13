@@ -4,12 +4,94 @@
   gap: 16px;
 }
 
-.person-card { display: flex; flex-direction: column; gap: 12px; }
+.person-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
-.person-header { display: flex; align-items: center; gap: 12px; }
-.person-info { min-width: 0; }
+.person-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.person-info {
+  min-width: 0;
+  flex: 1;
+}
 
-.person-groups { display: flex; flex-wrap: wrap; gap: 6px; }
+.person-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.person-online-dot {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #94a3b8;
+  border: 2px solid var(--white);
+}
+.person-online-dot--on {
+  background: #22c55e;
+}
+
+.person-status-label {
+  color: #94a3b8;
+  margin-top: 2px;
+}
+.person-status-label--on {
+  color: #22c55e;
+  font-weight: 500;
+}
+
+.btn-message {
+  position: relative;
+  background: var(--primary-light);
+  border: none;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.btn-message:hover {
+  background: #c7d2fe;
+}
+.btn-message-icon {
+  font-size: 17px;
+}
+
+.btn-message-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  border: 2px solid var(--white);
+}
+
+.person-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 
 .person-group-chip {
   padding: 3px 10px;
@@ -21,11 +103,15 @@
   cursor: pointer;
   transition: background 0.15s;
 }
-.person-group-chip:hover { background: #c7d2fe; }
+.person-group-chip:hover {
+  background: #c7d2fe;
+}
 
 .person-stats {
   display: flex;
   justify-content: space-between;
 }
 
-.person-stat { text-align: center; }
+.person-stat {
+  text-align: center;
+}

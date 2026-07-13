@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
@@ -5,7 +6,6 @@ import { useNavigate } from 'react-router-dom';
 import { ExpenseCategory, GroupCategory } from '../../types';
 import { computeMemberBalances, simplifyDebts } from '../../utils/debtUtils';
 import './Dashboard.css';
-import { formatDate } from '../../utils/helperUtils';
 
 const EXPENSE_CATEGORY_ICONS: Record<ExpenseCategory, string> = {
   food: '🍔',
@@ -33,17 +33,23 @@ const getGreeting = () => {
 const Dashboard = () => {
   const { groups } = useGroups();
   const { expenses } = useExpenses();
-  const { user, status } = useAuth();
+  const { user, status, relink, memberLinkStatus } = useAuth();
   const navigate = useNavigate();
+  const [relinking, setRelinking] = useState(false);
+  const [relinkDone, setRelinkDone] = useState(false);
 
-  const userName = user?.name?.toLowerCase();
+  const handleRelink = async () => {
+    setRelinking(true);
+    try {
+      await relink();
+      setRelinkDone(true);
+    } finally {
+      setRelinking(false);
+    }
+  };
 
-  const isSelf = (m: { userId?: string | null; email: string; name: string }) =>
-    (user?.id && m.userId && m.userId === user.id) ||
-    (user?.email &&
-      m.email &&
-      m.email.toLowerCase() === user.email.toLowerCase()) ||
-    m.name.toLowerCase() === userName;
+  const isSelf = (m: { userId: string | null }) =>
+    !!user?.id && !!m.userId && m.userId === user.id;
 
   // Groups the logged-in user belongs to
   const myGroups = groups.filter((g) => g.members.some(isSelf));
@@ -56,12 +62,12 @@ const Dashboard = () => {
       .map((m) => m.id)
   );
 
-  // Expenses where the user is either the payer or a split participant
+  // Expenses where the user is either the payer or a split participant — use member IDs, not names
   const myExpenses = expenses.filter(
     (e) =>
       myGroups.some((g) => g.id === e.groupId) &&
-      (e.paidByName.toLowerCase() === userName ||
-        e.splits.some((s) => s.memberName.toLowerCase() === userName))
+      (selfMemberIds.has(e.paidBy) ||
+        e.splits.some((s) => selfMemberIds.has(s.memberId)))
   );
 
   const totalExpenses = myExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -106,6 +112,34 @@ const Dashboard = () => {
           </p>
         </div>
       </div>
+
+      {memberLinkStatus === 'failed' && !relinkDone && (
+        <div className="sync-error-banner">
+          <span className="sync-error-icon">⚠️</span>
+          <div className="sync-error-body">
+            <p className="sync-error-title">
+              Some expenses may not be linked yet
+            </p>
+            <p className="sync-error-desc">
+              We couldn't complete the account sync when you signed up. Tap the
+              button to retry linking expenses added under your contact info.
+            </p>
+          </div>
+          <button
+            className="btn btn-sm btn-outline sync-retry-btn"
+            onClick={handleRelink}
+            disabled={relinking}
+          >
+            {relinking ? 'Syncing…' : 'Retry Sync'}
+          </button>
+        </div>
+      )}
+
+      {relinkDone && (
+        <div className="sync-success-banner">
+          ✓ Account sync complete. Your expenses are now linked.
+        </div>
+      )}
 
       <div className="grid-4 mb-4">
         <div className="stat-card">
@@ -174,7 +208,7 @@ const Dashboard = () => {
                     <div className="recent-info">
                       <p className="recent-title">{e.title}</p>
                       <p className="text-xs text-muted">
-                        {e.paidByName} · {formatDate(e.date)}
+                        {e.paidByName} · {e.date}
                       </p>
                     </div>
                     <span className="recent-amount">

@@ -1,21 +1,42 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { AuthUser } from '../types';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+} from 'react';
+import { AuthUser, MemberLinkStatus } from '../types';
 import { TOKEN_KEY, REFRESH_TOKEN_KEY } from '../services/apiClient';
 import { authService, parseApiError } from '../services/authService';
 
-export type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'unauthenticated';
+export type AuthStatus =
+  | 'idle'
+  | 'loading'
+  | 'authenticated'
+  | 'unauthenticated';
 
 export interface AuthContextType {
   user: AuthUser | null;
   status: AuthStatus;
   login: (identifier: string, password: string) => Promise<void>;
-  signup: (name: string, password: string, options: { email?: string; mobile?: string }) => Promise<void>;
+  signup: (
+    name: string,
+    password: string,
+    options: { email?: string; mobile?: string }
+  ) => Promise<void>;
   logout: () => Promise<void>;
+  relink: () => Promise<void>;
+  memberLinkStatus: MemberLinkStatus | null;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
-const persistSession = (user: AuthUser, accessToken: string, refreshToken: string) => {
+const persistSession = (
+  user: AuthUser,
+  accessToken: string,
+  refreshToken: string
+) => {
   localStorage.setItem(TOKEN_KEY, accessToken);
   localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   localStorage.setItem('auth_user', JSON.stringify(user));
@@ -76,7 +97,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = useCallback(async (identifier: string, password: string) => {
     setStatus('loading');
     try {
-      const { user: authUser, accessToken, refreshToken } = await authService.login({ identifier, password });
+      const {
+        user: authUser,
+        accessToken,
+        refreshToken,
+      } = await authService.login({ identifier, password });
       persistSession(authUser, accessToken, refreshToken);
       setUser(authUser);
       setStatus('authenticated');
@@ -86,23 +111,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const signup = useCallback(async (name: string, password: string, options: { email?: string; mobile?: string }) => {
-    setStatus('loading');
-    try {
-      const { user: authUser, accessToken, refreshToken } = await authService.signup({
-        name,
-        password,
-        ...(options.email  ? { email:  options.email  } : {}),
-        ...(options.mobile ? { mobile: options.mobile } : {}),
-      });
-      persistSession(authUser, accessToken, refreshToken);
-      setUser(authUser);
-      setStatus('authenticated');
-    } catch (err) {
-      setStatus('unauthenticated');
-      throw new Error(parseApiError(err));
-    }
-  }, []);
+  const signup = useCallback(
+    async (
+      name: string,
+      password: string,
+      options: { email?: string; mobile?: string }
+    ) => {
+      setStatus('loading');
+      try {
+        const {
+          user: authUser,
+          accessToken,
+          refreshToken,
+        } = await authService.signup({
+          name,
+          password,
+          ...(options.email ? { email: options.email } : {}),
+          ...(options.mobile ? { mobile: options.mobile } : {}),
+        });
+        persistSession(authUser, accessToken, refreshToken);
+        setUser(authUser);
+        setStatus('authenticated');
+      } catch (err) {
+        setStatus('unauthenticated');
+        throw new Error(parseApiError(err));
+      }
+    },
+    []
+  );
 
   const logout = useCallback(async () => {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY) ?? '';
@@ -117,8 +153,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  const relink = useCallback(async () => {
+    const result = await authService.relink();
+    setUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            memberLinkStatus: result.memberLinkStatus as MemberLinkStatus,
+          }
+        : prev
+    );
+  }, []);
+
+  const memberLinkStatus = user?.memberLinkStatus ?? null;
+
   return (
-    <AuthContext.Provider value={{ user, status, login, signup, logout }}>
+    <AuthContext.Provider
+      value={{ user, status, login, signup, logout, relink, memberLinkStatus }}
+    >
       {children}
     </AuthContext.Provider>
   );

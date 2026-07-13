@@ -19,12 +19,15 @@ export type ExpenseCategory =
   (typeof ExpenseCategory)[keyof typeof ExpenseCategory];
 export const EXPENSE_CATEGORIES = Object.values(ExpenseCategory);
 
+export type MemberLinkStatus = 'pending' | 'linked' | 'failed';
+
 export interface AuthUser {
   id: string;
   name: string;
   email?: string;
   mobile?: string;
   avatar: string;
+  memberLinkStatus: MemberLinkStatus;
 }
 
 export interface Member {
@@ -33,7 +36,7 @@ export interface Member {
   email: string;
   avatar: string;
   groupId: string;
-  userId?: string | null; // auth user id — set only for registered SplitWise users
+  userId: string | null; // auth user id — always set for registered users, null for unregistered guests
 }
 
 export interface Group {

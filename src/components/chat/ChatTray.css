@@ -1,0 +1,9 @@
+.chat-tray {
+  position: fixed;
+  bottom: 0;
+  right: 24px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  z-index: 1000;
+}

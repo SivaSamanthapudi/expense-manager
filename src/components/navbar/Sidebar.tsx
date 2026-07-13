@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useChat } from '../../context/ChatContext';
 import './Sidebar.css';
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: '📊' },
   { path: '/groups', label: 'Groups', icon: '👥' },
   { path: '/expenses', label: 'Expenses', icon: '💰' },
@@ -11,9 +12,10 @@ const NAV_ITEMS = [
 
 const Sidebar = () => {
   const { user, logout } = useAuth();
+  const { totalUnread } = useChat();
 
   const handleLogout = () => {
-    logout();
+    void logout();
   };
 
   return (
@@ -24,27 +26,44 @@ const Sidebar = () => {
       </div>
 
       <nav className="sidebar-nav">
-        {NAV_ITEMS.map(item => (
+        {BASE_NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            className={({ isActive }) => `nav-item ${isActive ? 'nav-item-active' : ''}`}
+            className={({ isActive }) =>
+              `nav-item ${isActive ? 'nav-item-active' : ''}`
+            }
           >
             <span className="nav-icon">{item.icon}</span>
             <span className="nav-label">{item.label}</span>
+            {item.path === '/people' && totalUnread > 0 && (
+              <span className="nav-unread-badge">
+                {totalUnread > 99 ? '99+' : totalUnread}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
 
       <div className="sidebar-footer">
         <div className="user-info">
-          <img src={user?.avatar} alt={user?.name} className="avatar avatar-sm" />
+          <img
+            src={user?.avatar}
+            alt={user?.name}
+            className="avatar avatar-sm"
+          />
           <div className="user-details">
             <p className="user-name">{user?.name}</p>
-            <p className="user-email text-xs text-muted">{user?.email}</p>
+            <p className="user-email text-xs text-muted">
+              {user?.email ?? user?.mobile}
+            </p>
           </div>
         </div>
-        <button className="btn-icon logout-btn" onClick={handleLogout} title="Logout">
+        <button
+          className="btn-icon logout-btn"
+          onClick={handleLogout}
+          title="Logout"
+        >
           🚪
         </button>
       </div>

@@ -30,8 +30,15 @@ export const groupService = {
   },
 
   // Members are nested under a group
-  async addMember(groupId: string, payload: Omit<Member, 'id' | 'groupId'>): Promise<Member> {
-    const { data } = await apiClient.post<Member>(`/groups/${groupId}/members`, payload);
+  async addMember(
+    groupId: string,
+    payload: Omit<Member, 'id' | 'groupId'>
+  ): Promise<Member> {
+    // Send userId explicitly so the backend links by ID (works for mobile-only users too)
+    const { data } = await apiClient.post<Member>(
+      `/groups/${groupId}/members`,
+      payload
+    );
     return data;
   },
 
@@ -41,12 +48,16 @@ export const groupService = {
 
   async searchUsers(q: string): Promise<UserSuggestion[]> {
     if (!q.trim()) return [];
-    const { data } = await apiClient.get<UserSuggestion[]>(`/users/search?q=${encodeURIComponent(q)}`);
+    const { data } = await apiClient.get<UserSuggestion[]>(
+      `/users/search?q=${encodeURIComponent(q)}`
+    );
     return data;
   },
 
   async getPayments(groupId: string): Promise<PaymentRecord[]> {
-    const { data } = await apiClient.get<PaymentRecord[]>(`/groups/${groupId}/payments`);
+    const { data } = await apiClient.get<PaymentRecord[]>(
+      `/groups/${groupId}/payments`
+    );
     return data;
   },
 
