@@ -65,4 +65,49 @@ export const authService = {
     );
     return data;
   },
+
+  async updateProfile(payload: {
+    name?: string;
+    email?: string;
+    mobile?: string;
+    avatar?: string;
+  }): Promise<{ user: AuthUser }> {
+    const { data } = await apiClient.patch<{ user: AuthUser }>(
+      '/auth/me',
+      payload
+    );
+    return data;
+  },
+
+  async updatePassword(
+    currentPassword: string,
+    newPassword: string
+  ): Promise<void> {
+    await apiClient.patch('/auth/me/password', {
+      currentPassword,
+      newPassword,
+    });
+  },
+
+  async forgotPassword(
+    identifier: string
+  ): Promise<{ message: string; devOtp?: string }> {
+    const { data } = await apiClient.post<{ message: string; devOtp?: string }>(
+      '/auth/forgot-password',
+      { identifier }
+    );
+    return data;
+  },
+
+  async resetPassword(
+    identifier: string,
+    otp: string,
+    newPassword: string
+  ): Promise<{ message: string }> {
+    const { data } = await apiClient.post<{ message: string }>(
+      '/auth/reset-password',
+      { identifier, otp, newPassword }
+    );
+    return data;
+  },
 };

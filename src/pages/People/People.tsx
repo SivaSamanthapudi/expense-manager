@@ -20,7 +20,8 @@ const People = () => {
     string,
     {
       name: string;
-      email: string;
+      email?: string;
+      mobile?: string;
       avatar: string;
       userId: string | null;
       groups: { id: string; name: string }[];
@@ -37,6 +38,7 @@ const People = () => {
         peopleMap.set(key, {
           name: m.name,
           email: m.email,
+          mobile: m.mobile,
           avatar: m.avatar,
           userId: m.userId ?? null,
           groups: [],
@@ -77,7 +79,8 @@ const People = () => {
 
   const handleMessage = (p: {
     name: string;
-    email: string;
+    email?: string;
+    mobile?: string;
     avatar: string;
     userId: string | null;
   }) => {

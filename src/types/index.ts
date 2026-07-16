@@ -34,6 +34,7 @@ export interface Member {
   id: string;
   name: string;
   email: string;
+  mobile?: string;
   avatar: string;
   groupId: string;
   userId: string | null; // auth user id — always set for registered users, null for unregistered guests

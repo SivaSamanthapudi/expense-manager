@@ -57,9 +57,10 @@ const Expenses = () => {
     }
   };
 
-  const isSelfMember = (m: { userId?: string | null; email: string; name: string }) =>
+  const isSelfMember = (m: { userId?: string | null; email?: string; name: string; mobile?: string }) =>
     (user?.id && m.userId && m.userId === user.id) ||
-    (user?.email && m.email && m.email.toLowerCase() === user.email.toLowerCase()) ||
+    (user?.email && m.email && m.email?.toLowerCase() === user.email?.toLowerCase()) ||
+    (user?.mobile && m.mobile && m.mobile?.toLowerCase() === user.mobile?.toLowerCase()) ||
     (m.name.toLowerCase() === user?.name?.toLowerCase());
 
   const canModify = (e: Expense) => {

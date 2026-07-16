@@ -24,6 +24,7 @@ interface PendingMember {
   userId: string | null; // set for registered SplitWise users
   name: string;
   email: string;
+  mobile?: string;
   avatar: string;
   isRegistered: boolean; // false = not found in SplitWise
   locked: boolean; // true when picked from a suggestion
@@ -72,7 +73,13 @@ const GroupDetail = () => {
   const [pending, setPending] = useState<PendingMember[]>([]);
 
   // Single manual-entry form (for unregistered)
-  const [manualForm, setManualForm] = useState({ name: '', email: '' });
+  const [manualForm, setManualForm] = useState({
+    name: '',
+    email: '',
+    mobile: '',
+    contactMethod: 'email' as 'email' | 'mobile',
+  });
+  const [manualError, setManualError] = useState('');
   const [showManual, setShowManual] = useState(false);
 
   const suggestionsRef = useRef<HTMLDivElement>(null);
@@ -187,25 +194,52 @@ const GroupDetail = () => {
 
   // Add a manually-typed (unregistered) member
   const addManualMember = () => {
-    if (!manualForm.name.trim()) return;
+    const name = manualForm.name.trim();
+    const email = manualForm.email.trim().toLowerCase();
+    const mobile = manualForm.mobile.trim();
+    if (!name) {
+      setManualError('Name is required');
+      return;
+    }
+    if (manualForm.contactMethod === 'email' && !email) {
+      setManualError('Email is required');
+      return;
+    }
+    if (manualForm.contactMethod === 'mobile' && !mobile) {
+      setManualError('Mobile number is required');
+      return;
+    }
+    if (manualForm.contactMethod === 'mobile' && !/^[6-9]\d{9}$/.test(mobile)) {
+      setManualError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    setManualError('');
+    const contact = manualForm.contactMethod === 'email' ? email : mobile;
     setPending((prev) => [
       ...prev,
       {
         key: `manual_${Date.now()}`,
         userId: null,
-        name: manualForm.name.trim(),
-        email: manualForm.email.trim(),
+        name,
+        email: manualForm.contactMethod === 'email' ? email : '',
+        mobile: manualForm.contactMethod === 'mobile' ? mobile : undefined,
         avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-          manualForm.name.trim()
+          name
         )}`,
         isRegistered: false,
         locked: false,
-      },
+      } as PendingMember,
     ]);
-    setManualForm({ name: '', email: '' });
+    setManualForm({
+      name: '',
+      email: '',
+      mobile: '',
+      contactMethod: manualForm.contactMethod,
+    });
     setShowManual(false);
     setSearchQuery('');
     setSearchDone(false);
+    void contact; // used for dedup — kept for clarity
   };
 
   const closeMemberModal = () => {
@@ -217,7 +251,8 @@ const GroupDetail = () => {
     setShowSuggestions(false);
     setSearchDone(false);
     setShowManual(false);
-    setManualForm({ name: '', email: '' });
+    setManualForm({ name: '', email: '', mobile: '', contactMethod: 'email' });
+    setManualError('');
   };
 
   // ── Batch add all pending members ────────────────────────────────────────────
@@ -234,6 +269,7 @@ const GroupDetail = () => {
         await addMember({
           name: p.name,
           email: p.email,
+          ...(p.mobile ? { mobile: p.mobile } : {}),
           avatar: p.avatar,
           groupId: group!.id,
           userId: p.userId,
@@ -439,10 +475,16 @@ const GroupDetail = () => {
       .filter((m) => !m.userId && m.email)
       .map((m) => m.email.toLowerCase())
   );
+  const currentGroupMobiles = new Set(
+    group.members
+      .filter((m) => !m.userId && m.mobile)
+      .map((m) => m.mobile!.trim())
+  );
   const existingPool: {
     id: string;
     name: string;
     email: string;
+    mobile?: string;
     avatar: string;
     userId: string | null;
   }[] = [];
@@ -451,30 +493,35 @@ const GroupDetail = () => {
     if (g.id === group.id) return;
     g.members.forEach((m) => {
       const dedupKey =
-        m.userId ?? (m.email ? `email:${m.email.toLowerCase()}` : null);
+        m.userId ??
+        (m.email ? `email:${m.email.toLowerCase()}` : null) ??
+        (m.mobile ? `mobile:${m.mobile.trim()}` : null);
       if (!dedupKey) return;
       if (seenKeys.has(dedupKey)) return;
-      if (
+      const alreadyInGroup = m.userId
+        ? currentGroupUserIds.has(m.userId)
+        : m.email
+        ? currentGroupEmails.has(m.email.toLowerCase())
+        : m.mobile
+        ? currentGroupMobiles.has(m.mobile.trim())
+        : false;
+      if (alreadyInGroup) return;
+      const alreadyPending = pending.some((p) =>
         m.userId
-          ? currentGroupUserIds.has(m.userId)
-          : m.email && currentGroupEmails.has(m.email.toLowerCase())
-      )
-        return;
-      if (
-        pending.some((p) =>
-          m.userId
-            ? p.key === m.userId
-            : p.email &&
-              m.email &&
-              p.email.toLowerCase() === m.email.toLowerCase()
-        )
-      )
-        return;
+          ? p.key === m.userId
+          : m.email
+          ? p.email && p.email.toLowerCase() === m.email.toLowerCase()
+          : m.mobile
+          ? p.mobile && p.mobile.trim() === m.mobile!.trim()
+          : false
+      );
+      if (alreadyPending) return;
       seenKeys.add(dedupKey);
       existingPool.push({
         id: m.id,
         name: m.name,
         email: m.email,
+        mobile: m.mobile,
         avatar: m.avatar,
         userId: m.userId ?? null,
       });
@@ -1309,7 +1356,9 @@ const GroupDetail = () => {
                     />
                     <div className="existing-member-info">
                       <span className="text-sm font-semibold">{m.name}</span>
-                      <span className="text-xs text-muted">{m.email}</span>
+                      <span className="text-xs text-muted">
+                        {m.email || m.mobile}
+                      </span>
                     </div>
                     <span className="chip-check">{picked ? '✓' : '+'}</span>
                   </button>
@@ -1376,7 +1425,7 @@ const GroupDetail = () => {
                 type="button"
                 className="btn btn-outline btn-sm"
                 onClick={() => {
-                  setManualForm({ name: searchQuery, email: '' });
+                  setManualForm({ name: searchQuery, email: '', mobile:'', contactMethod:'email' });
                   setShowManual(true);
                   setSearchQuery('');
                   setSearchDone(false);
@@ -1400,7 +1449,13 @@ const GroupDetail = () => {
                 className="btn-icon"
                 onClick={() => {
                   setShowManual(false);
-                  setManualForm({ name: '', email: '' });
+                  setManualForm({
+                    name: '',
+                    email: '',
+                    mobile: '',
+                    contactMethod: 'email',
+                  });
+                  setManualError('');
                 }}
               >
                 ✕
@@ -1416,22 +1471,86 @@ const GroupDetail = () => {
                 }
               />
             </div>
-            <div className="form-group" style={{ marginBottom: 8 }}>
-              <input
-                className="form-control"
-                type="email"
-                placeholder="Email (to send invite)"
-                value={manualForm.email}
-                onChange={(e) =>
-                  setManualForm((f) => ({ ...f, email: e.target.value }))
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              <button
+                type="button"
+                className={`auth-toggle-btn${
+                  manualForm.contactMethod === 'email' ? ' active' : ''
+                }`}
+                style={{
+                  flex: 1,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: '1px solid #e2e8f0',
+                }}
+                onClick={() =>
+                  setManualForm((f) => ({
+                    ...f,
+                    contactMethod: 'email',
+                    mobile: '',
+                  }))
                 }
-              />
+              >
+                Email
+              </button>
+              <button
+                type="button"
+                className={`auth-toggle-btn${
+                  manualForm.contactMethod === 'mobile' ? ' active' : ''
+                }`}
+                style={{
+                  flex: 1,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: '1px solid #e2e8f0',
+                }}
+                onClick={() =>
+                  setManualForm((f) => ({
+                    ...f,
+                    contactMethod: 'mobile',
+                    email: '',
+                  }))
+                }
+              >
+                Mobile
+              </button>
             </div>
+            {manualForm.contactMethod === 'email' ? (
+              <div className="form-group" style={{ marginBottom: 8 }}>
+                <input
+                  className="form-control"
+                  type="email"
+                  placeholder="Email address *"
+                  value={manualForm.email}
+                  onChange={(e) =>
+                    setManualForm((f) => ({ ...f, email: e.target.value }))
+                  }
+                />
+              </div>
+            ) : (
+              <div className="form-group" style={{ marginBottom: 8 }}>
+                <input
+                  className="form-control"
+                  type="tel"
+                  placeholder="10-digit mobile number *"
+                  value={manualForm.mobile}
+                  onChange={(e) =>
+                    setManualForm((f) => ({ ...f, mobile: e.target.value }))
+                  }
+                />
+              </div>
+            )}
+            {manualError && (
+              <p className="form-error" style={{ marginBottom: 6 }}>
+                {manualError}
+              </p>
+            )}
             <button
               type="button"
               className="btn btn-primary btn-sm w-full"
               onClick={addManualMember}
-              disabled={!manualForm.name.trim()}
             >
               Add to list
             </button>
@@ -1462,6 +1581,9 @@ const GroupDetail = () => {
                     <span className="pending-member-name">{p.name}</span>
                     {p.email && (
                       <span className="pending-member-email">{p.email}</span>
+                    )}
+                    {!p.email && p.mobile && (
+                      <span className="pending-member-email">{p.mobile}</span>
                     )}
                     {!p.isRegistered && (
                       <span className="pending-member-badge">

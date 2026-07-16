@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import './Sidebar.css';
@@ -13,6 +13,7 @@ const BASE_NAV_ITEMS = [
 const Sidebar = () => {
   const { user, logout } = useAuth();
   const { totalUnread } = useChat();
+  const navigate = useNavigate();
 
   const handleLogout = () => {
     void logout();
@@ -46,7 +47,11 @@ const Sidebar = () => {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="user-info">
+        <button
+          className="user-info user-info-btn"
+          onClick={() => navigate('/profile')}
+          title="Edit profile"
+        >
           <img
             src={user?.avatar}
             alt={user?.name}
@@ -58,7 +63,7 @@ const Sidebar = () => {
               {user?.email ?? user?.mobile}
             </p>
           </div>
-        </div>
+        </button>
         <button
           className="btn-icon logout-btn"
           onClick={handleLogout}

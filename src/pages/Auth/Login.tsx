@@ -48,23 +48,45 @@ const Login = () => {
               type={inputType}
               placeholder="you@example.com or 9876543210"
               value={form.identifier}
-              onChange={(e) => setForm((f) => ({ ...f, identifier: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, identifier: e.target.value }))
+              }
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Password</label>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                marginBottom: 4,
+              }}
+            >
+              <label className="form-label" style={{ margin: 0 }}>
+                Password
+              </label>
+              <Link to="/forgot-password" className="forgot-link">
+                Forgot password?
+              </Link>
+            </div>
             <input
               className="form-control"
               type="password"
               placeholder="••••••••"
               value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, password: e.target.value }))
+              }
             />
           </div>
 
           {error && <p className="form-error">{error}</p>}
 
-          <button className="btn btn-primary w-full auth-submit" type="submit" disabled={loading}>
+          <button
+            className="btn btn-primary w-full auth-submit"
+            type="submit"
+            disabled={loading}
+          >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>

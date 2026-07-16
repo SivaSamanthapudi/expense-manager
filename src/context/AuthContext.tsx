@@ -27,6 +27,16 @@ export interface AuthContextType {
   ) => Promise<void>;
   logout: () => Promise<void>;
   relink: () => Promise<void>;
+  updateProfile: (payload: {
+    name?: string;
+    email?: string;
+    mobile?: string;
+    avatar?: string;
+  }) => Promise<void>;
+  updatePassword: (
+    currentPassword: string,
+    newPassword: string
+  ) => Promise<void>;
   memberLinkStatus: MemberLinkStatus | null;
 }
 
@@ -165,11 +175,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
   }, []);
 
+  const updateProfile = useCallback(
+    async (payload: {
+      name?: string;
+      email?: string;
+      mobile?: string;
+      avatar?: string;
+    }) => {
+      const { user: updated } = await authService.updateProfile(payload);
+      setUser(updated);
+      localStorage.setItem('auth_user', JSON.stringify(updated));
+    },
+    []
+  );
+
+  const updatePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      await authService.updatePassword(currentPassword, newPassword);
+    },
+    []
+  );
+
   const memberLinkStatus = user?.memberLinkStatus ?? null;
 
   return (
     <AuthContext.Provider
-      value={{ user, status, login, signup, logout, relink, memberLinkStatus }}
+      value={{
+        user,
+        status,
+        login,
+        signup,
+        logout,
+        relink,
+        updateProfile,
+        updatePassword,
+        memberLinkStatus,
+      }}
     >
       {children}
     </AuthContext.Provider>

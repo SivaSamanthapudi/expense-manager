@@ -10,16 +10,17 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ChatProvider>
-          <GroupProvider>
-            <ExpenseProvider>
+        <GroupProvider>
+          <ExpenseProvider>
+            <ChatProvider>
               <AppRoutes />
-            </ExpenseProvider>
-          </GroupProvider>
-        </ChatProvider>
+            </ChatProvider>
+          </ExpenseProvider>
+        </GroupProvider>
       </AuthProvider>
     </BrowserRouter>
   );
 }
 
 export default App;
+ 

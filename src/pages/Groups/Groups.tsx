@@ -78,7 +78,12 @@ const Groups = () => {
   const [selectedMembers, setSelectedMembers] = useState<
     Omit<Member, 'groupId'>[]
   >([]);
-  const [newMember, setNewMember] = useState({ name: '', email: '' });
+  const [newMember, setNewMember] = useState({
+    name: '',
+    email: '',
+    mobile: '',
+    contactMethod: 'email' as 'email' | 'mobile',
+  });
   const [memberError, setMemberError] = useState('');
 
   // flat list of all unique existing members across all groups (for quick-add)
@@ -132,7 +137,7 @@ const Groups = () => {
     setStep('details');
     setForm(EMPTY_FORM);
     setSelectedMembers([]);
-    setNewMember({ name: '', email: '' });
+    setNewMember({ name: '', email: '', mobile: '', contactMethod: 'email' });
     setError('');
     setSaveError('');
     setMemberError('');
@@ -183,23 +188,35 @@ const Groups = () => {
   const handleAddNewMember = () => {
     const name = newMember.name.trim();
     const email = newMember.email.trim().toLowerCase();
+    const mobile = newMember.mobile.trim();
     if (!name) {
       setMemberError('Name is required');
       return;
     }
-    // Duplicate check: by email if provided, otherwise by name (best-effort for no-email guests)
-    if (email && selectedMembers.some((m) => m.email.toLowerCase() === email)) {
+    if (newMember.contactMethod === 'email' && !email) {
+      setMemberError('Email is required');
+      return;
+    }
+    if (newMember.contactMethod === 'mobile' && !mobile) {
+      setMemberError('Mobile number is required');
+      return;
+    }
+    if (newMember.contactMethod === 'mobile' && !/^[6-9]\d{9}$/.test(mobile)) {
+      setMemberError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    if (
+      email &&
+      selectedMembers.some((m) => m.email && m.email.toLowerCase() === email)
+    ) {
       setMemberError('A member with this email is already in the list');
       return;
     }
     if (
-      !email &&
-      selectedMembers.some(
-        (m) =>
-          !m.userId && !m.email && m.name.toLowerCase() === name.toLowerCase()
-      )
+      mobile &&
+      selectedMembers.some((m) => m.mobile && m.mobile.trim() === mobile)
     ) {
-      setMemberError('A guest with this name is already in the list');
+      setMemberError('A member with this mobile number is already in the list');
       return;
     }
     setSelectedMembers((prev) => [
@@ -207,14 +224,20 @@ const Groups = () => {
       {
         id: `new_${Date.now()}`,
         name,
-        email,
+        email: newMember.contactMethod === 'email' ? email : '',
+        ...(newMember.contactMethod === 'mobile' ? { mobile } : {}),
         avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
           name
         )}`,
         userId: null,
       },
     ]);
-    setNewMember({ name: '', email: '' });
+    setNewMember({
+      name: '',
+      email: '',
+      mobile: '',
+      contactMethod: newMember.contactMethod,
+    });
     setMemberError('');
   };
 
@@ -603,15 +626,72 @@ const Groups = () => {
                   }
                   onKeyDown={(e) => e.key === 'Enter' && handleAddNewMember()}
                 />
-                <input
-                  className="form-control"
-                  placeholder="Email (optional)"
-                  value={newMember.email}
-                  onChange={(e) =>
-                    setNewMember((f) => ({ ...f, email: e.target.value }))
-                  }
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddNewMember()}
-                />
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 0,
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                    border: '1px solid #e2e8f0',
+                    flexShrink: 0,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className={`auth-toggle-btn${
+                      newMember.contactMethod === 'email' ? ' active' : ''
+                    }`}
+                    style={{ padding: '8px 12px', fontSize: 12 }}
+                    onClick={() =>
+                      setNewMember((f) => ({
+                        ...f,
+                        contactMethod: 'email',
+                        mobile: '',
+                      }))
+                    }
+                  >
+                    Email
+                  </button>
+                  <button
+                    type="button"
+                    className={`auth-toggle-btn${
+                      newMember.contactMethod === 'mobile' ? ' active' : ''
+                    }`}
+                    style={{ padding: '8px 12px', fontSize: 12 }}
+                    onClick={() =>
+                      setNewMember((f) => ({
+                        ...f,
+                        contactMethod: 'mobile',
+                        email: '',
+                      }))
+                    }
+                  >
+                    Mobile
+                  </button>
+                </div>
+                {newMember.contactMethod === 'email' ? (
+                  <input
+                    className="form-control"
+                    type="email"
+                    placeholder="Email address *"
+                    value={newMember.email}
+                    onChange={(e) =>
+                      setNewMember((f) => ({ ...f, email: e.target.value }))
+                    }
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddNewMember()}
+                  />
+                ) : (
+                  <input
+                    className="form-control"
+                    type="tel"
+                    placeholder="10-digit mobile *"
+                    value={newMember.mobile}
+                    onChange={(e) =>
+                      setNewMember((f) => ({ ...f, mobile: e.target.value }))
+                    }
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddNewMember()}
+                  />
+                )}
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={handleAddNewMember}
@@ -638,7 +718,9 @@ const Groups = () => {
                     />
                     <div className="flex-1">
                       <p className="text-sm font-semibold">{m.name}</p>
-                      <p className="text-xs text-muted">{m.email}</p>
+                      <p className="text-xs text-muted">
+                        {m.email || m.mobile}
+                      </p>
                     </div>
                     <button
                       className="btn-icon"

@@ -119,7 +119,13 @@ export const GroupProvider = ({ children }: { children: ReactNode }) => {
           ? g.members.some(
               (m) =>
                 !m.userId &&
-                m.email.toLowerCase() === member.email.toLowerCase()
+                m.email?.toLowerCase() === member.email?.toLowerCase()
+            )
+          : member.mobile
+          ? g.members.some(
+              (m) =>
+                !m.userId &&
+                m.mobile === member.mobile
             )
           : false;
         if (isDuplicate) return g;
