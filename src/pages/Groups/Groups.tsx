@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import Modal from '../../components/modal/Modal';
 import { Group, Member, GROUP_CATEGORIES, GroupCategory } from '../../types';
 import { computeMemberBalances, simplifyDebts } from '../../utils/debtUtils';
+import { groupService } from '../../services/groupService';
 import './Groups.css';
 
 const CATEGORY_LABELS: Record<GroupCategory, string> = {
@@ -110,8 +111,18 @@ const Groups = () => {
   const openCreate = () => {
     setEditingGroup(null);
     setForm(EMPTY_FORM);
-    setSelectedMembers([]);
-    setStep('details');
+
+    // Pre-select the current user so they are always in the group by default
+    const selfMember: Omit<Member, 'groupId'> | null = user
+      ? {
+        id: user.id,
+        name: user.name,
+        email: user.email ?? '',
+        avatar: user.avatar,
+        userId: user.id,
+      }
+      : null;
+    setSelectedMembers(selfMember ? [selfMember] : []); setStep('details');
     setError('');
     setMemberError('');
     setModalOpen(true);
@@ -177,15 +188,60 @@ const Groups = () => {
     }
   };
 
+  // Returns true if a candidate member conflicts with anything already in selectedMembers.
+  // Checks by userId, email, AND mobile across both registered and unregistered entries.
+  const isAlreadySelected = (candidate: {
+    userId?: string | null;
+    email?: string;
+    mobile?: string;
+  }) => {
+    return selectedMembers.some((s) => {
+      if (candidate.userId && s.userId && candidate.userId === s.userId)
+        return true;
+      if (
+        candidate.email &&
+        candidate.email.trim() !== '' &&
+        s.email &&
+        s.email.toLowerCase() === candidate.email.toLowerCase()
+      )
+        return true;
+      if (
+        candidate.mobile &&
+        candidate.mobile.trim() !== '' &&
+        s.mobile &&
+        s.mobile.trim() === candidate.mobile.trim()
+      )
+        return true;
+      return false;
+    });
+  };
+
   const toggleExistingMember = (m: Omit<Member, 'groupId'>) => {
-    const matches = (s: Omit<Member, 'groupId'>) =>
-      m.userId ? s.userId === m.userId : s.email === m.email;
+    // Check both by identity key AND by contact info to catch cross-type duplicates
+    const matches = (s: Omit<Member, 'groupId'>) => {
+      if (m.userId && s.userId && m.userId === s.userId) return true;
+      if (
+        m.email &&
+        m.email.trim() !== '' &&
+        s.email &&
+        s.email.toLowerCase() === m.email.toLowerCase()
+      )
+        return true;
+      if (
+        m.mobile &&
+        m.mobile.trim() !== '' &&
+        s.mobile &&
+        s.mobile.trim() === m.mobile.trim()
+      )
+        return true;
+      return false;
+    };
     const already = selectedMembers.some(matches);
     if (already) setSelectedMembers((prev) => prev.filter((s) => !matches(s)));
     else setSelectedMembers((prev) => [...prev, m]);
   };
 
-  const handleAddNewMember = () => {
+  const handleAddNewMember = async () => {
     const name = newMember.name.trim();
     const email = newMember.email.trim().toLowerCase();
     const mobile = newMember.mobile.trim();
@@ -205,23 +261,29 @@ const Groups = () => {
       setMemberError('Enter a valid 10-digit mobile number');
       return;
     }
-    if (
-      email &&
-      selectedMembers.some((m) => m.email && m.email.toLowerCase() === email)
-    ) {
+    // Cross-type dedup: catches registered user + guest with same email/mobile
+    if (email && isAlreadySelected({ email })) {
       setMemberError('A member with this email is already in the list');
       return;
     }
-    if (
-      mobile &&
-      selectedMembers.some((m) => m.mobile && m.mobile.trim() === mobile)
-    ) {
+    if (mobile && isAlreadySelected({ mobile })) {
       setMemberError('A member with this mobile number is already in the list');
       return;
     }
-    setSelectedMembers((prev) => [
-      ...prev,
-      {
+    // Check if this contact is actually a registered user — auto-promote if so
+    const contact =
+      newMember.contactMethod === 'email' ? { email } : { mobile };
+    const registered = await groupService.lookupUser(contact);
+    const newEntry: Omit<Member, 'groupId'> = registered
+      ? {
+        id: registered.id,
+        name: registered.name,
+        email: registered.email,
+        mobile: registered.mobile || undefined,
+        avatar: registered.avatar,
+        userId: registered.id,
+      }
+      : {
         id: `new_${Date.now()}`,
         name,
         email: newMember.contactMethod === 'email' ? email : '',
@@ -230,15 +292,30 @@ const Groups = () => {
           name
         )}`,
         userId: null,
-      },
-    ]);
+      };
+    // Replace any conflicting entry with the same contact info
+    setSelectedMembers((prev) => {
+      const withoutConflicts = prev.filter((m) => {
+        if (email && m.email && m.email.toLowerCase() === email) return false;
+        if (mobile && m.mobile && m.mobile.trim() === mobile) return false;
+        return true;
+      });
+      return [...withoutConflicts, newEntry];
+    });
+    if (registered) {
+      setMemberError(
+        `ℹ️ ${name} is registered on SplitWise — added as registered user.`
+      );
+      setTimeout(() => setMemberError(''), 4000);
+    } else {
+      setMemberError('');
+    }
     setNewMember({
       name: '',
       email: '',
       mobile: '',
       contactMethod: newMember.contactMethod,
     });
-    setMemberError('');
   };
 
   const handleCreate = () => {
@@ -304,26 +381,26 @@ const Groups = () => {
             const transactions = g.simplifyDebts
               ? simplifyDebts(balances)
               : groupExpenses.flatMap((expense) =>
-                  expense.splits
-                    .filter((s) => !s.paid && s.memberId !== expense.paidBy)
-                    .map((s) => ({
-                      fromId: s.memberId,
-                      fromName: s.memberName,
-                      toId: expense.paidBy,
-                      toName: expense.paidByName,
-                      amount: s.amount - (s.paidAmount ?? 0),
-                    }))
-                    .filter((t) => t.amount > 0.01)
-                );
+                expense.splits
+                  .filter((s) => !s.paid && s.memberId !== expense.paidBy)
+                  .map((s) => ({
+                    fromId: s.memberId,
+                    fromName: s.memberName,
+                    toId: expense.paidBy,
+                    toName: expense.paidByName,
+                    amount: s.amount - (s.paidAmount ?? 0),
+                  }))
+                  .filter((t) => t.amount > 0.01)
+              );
             const youOwe = selfMember
               ? transactions
-                  .filter((t) => t.fromId === selfMember.id)
-                  .reduce((s, t) => s + t.amount, 0)
+                .filter((t) => t.fromId === selfMember.id)
+                .reduce((s, t) => s + t.amount, 0)
               : 0;
             const owedToYou = selfMember
               ? transactions
-                  .filter((t) => t.toId === selfMember.id)
-                  .reduce((s, t) => s + t.amount, 0)
+                .filter((t) => t.toId === selfMember.id)
+                .reduce((s, t) => s + t.amount, 0)
               : 0;
             const isSettled = selfMember && youOwe === 0 && owedToYou === 0;
 
@@ -446,8 +523,8 @@ const Groups = () => {
           editingGroup
             ? `Edit "${editingGroup.name}"`
             : step === 'details'
-            ? 'Create New Group'
-            : `Add Members to "${form.name}"`
+              ? 'Create New Group'
+              : `Add Members to "${form.name}"`
         }
         size="md"
         footer={
@@ -488,9 +565,8 @@ const Groups = () => {
               <button className="btn btn-primary" onClick={handleCreate}>
                 Create Group{' '}
                 {selectedMembers.length > 0
-                  ? `(${selectedMembers.length} member${
-                      selectedMembers.length > 1 ? 's' : ''
-                    })`
+                  ? `(${selectedMembers.length} member${selectedMembers.length > 1 ? 's' : ''
+                  })`
                   : ''}
               </button>
             </>
@@ -587,9 +663,8 @@ const Groups = () => {
                       <button
                         key={m.userId ?? m.id}
                         type="button"
-                        className={`existing-member-chip ${
-                          picked ? 'picked' : ''
-                        }`}
+                        className={`existing-member-chip ${picked ? 'picked' : ''
+                          }`}
                         onClick={() => toggleExistingMember(m)}
                       >
                         <img
@@ -608,10 +683,10 @@ const Groups = () => {
                     );
                   })}
                 </div>
+                <div className="divider" />
               </div>
             )}
 
-            <div className="divider" />
 
             {/* Add a brand new member */}
             <div className="form-group">
@@ -624,7 +699,9 @@ const Groups = () => {
                   onChange={(e) =>
                     setNewMember((f) => ({ ...f, name: e.target.value }))
                   }
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddNewMember()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleAddNewMember();
+                  }}
                 />
                 <div
                   style={{
@@ -638,9 +715,8 @@ const Groups = () => {
                 >
                   <button
                     type="button"
-                    className={`auth-toggle-btn${
-                      newMember.contactMethod === 'email' ? ' active' : ''
-                    }`}
+                    className={`auth-toggle-btn${newMember.contactMethod === 'email' ? ' active' : ''
+                      }`}
                     style={{ padding: '8px 12px', fontSize: 12 }}
                     onClick={() =>
                       setNewMember((f) => ({
@@ -654,9 +730,8 @@ const Groups = () => {
                   </button>
                   <button
                     type="button"
-                    className={`auth-toggle-btn${
-                      newMember.contactMethod === 'mobile' ? ' active' : ''
-                    }`}
+                    className={`auth-toggle-btn${newMember.contactMethod === 'mobile' ? ' active' : ''
+                      }`}
                     style={{ padding: '8px 12px', fontSize: 12 }}
                     onClick={() =>
                       setNewMember((f) => ({
@@ -678,7 +753,9 @@ const Groups = () => {
                     onChange={(e) =>
                       setNewMember((f) => ({ ...f, email: e.target.value }))
                     }
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddNewMember()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleAddNewMember();
+                    }}
                   />
                 ) : (
                   <input
@@ -689,12 +766,14 @@ const Groups = () => {
                     onChange={(e) =>
                       setNewMember((f) => ({ ...f, mobile: e.target.value }))
                     }
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddNewMember()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleAddNewMember();
+                    }}
                   />
                 )}
                 <button
                   className="btn btn-primary btn-sm"
-                  onClick={handleAddNewMember}
+                  onClick={() => void handleAddNewMember()}
                   style={{ whiteSpace: 'nowrap' }}
                 >
                   + Add

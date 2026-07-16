@@ -54,6 +54,23 @@ export const groupService = {
     return data;
   },
 
+  async lookupUser(contact: {
+    email?: string;
+    mobile?: string;
+  }): Promise<UserSuggestion | null> {
+    try {
+      const param = contact.email
+        ? `email=${encodeURIComponent(contact.email)}`
+        : `mobile=${encodeURIComponent(contact.mobile!)}`;
+      const { data } = await apiClient.get<UserSuggestion>(
+        `/users/lookup?${param}`
+      );
+      return data;
+    } catch {
+      return null; // 404 = not registered, that's fine
+    }
+  },
+
   async getPayments(groupId: string): Promise<PaymentRecord[]> {
     const { data } = await apiClient.get<PaymentRecord[]>(
       `/groups/${groupId}/payments`

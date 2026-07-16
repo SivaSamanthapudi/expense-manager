@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { ExpenseCategory, GroupCategory } from '../../types';
 import { computeMemberBalances, simplifyDebts } from '../../utils/debtUtils';
 import './Dashboard.css';
+import { formatDate } from '../../utils/helperUtils';
 
 const EXPENSE_CATEGORY_ICONS: Record<ExpenseCategory, string> = {
   food: '🍔',
@@ -208,7 +209,7 @@ const Dashboard = () => {
                     <div className="recent-info">
                       <p className="recent-title">{e.title}</p>
                       <p className="text-xs text-muted">
-                        {e.paidByName} · {e.date}
+                        {e.paidByName} · {formatDate(e.date)}
                       </p>
                     </div>
                     <span className="recent-amount">

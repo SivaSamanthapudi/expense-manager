@@ -83,7 +83,13 @@ const GroupDetail = () => {
   const [showManual, setShowManual] = useState(false);
 
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [suggestionRect, setSuggestionRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   // ── Payment modal state ──────────────────────────────────────────────────────
   const [paymentModal, setPaymentModal] = useState(false);
@@ -158,7 +164,18 @@ const GroupDetail = () => {
             !pending.some((p) => p.userId === u.id)
         );
         setSuggestions(filtered);
-        setShowSuggestions(filtered.length > 0);
+        if (filtered.length > 0) {
+          const rect = searchInputRef.current?.getBoundingClientRect();
+          if (rect)
+            setSuggestionRect({
+              top: rect.bottom + 4,
+              left: rect.left,
+              width: rect.width,
+            });
+          setShowSuggestions(true);
+        } else {
+          setShowSuggestions(false);
+        }
         setSearchDone(true);
       } catch {
         setSuggestions([]);
@@ -169,18 +186,32 @@ const GroupDetail = () => {
 
   // Pick a registered user from suggestions → add to pending basket
   const pickSuggestion = (u: UserSuggestion) => {
-    setPending((prev) => [
-      ...prev,
-      {
-        key: u.id,
-        userId: u.id,
-        name: u.name,
-        email: u.email || u.mobile,
-        avatar: u.avatar,
-        isRegistered: true,
-        locked: true,
-      },
-    ]);
+    // Cross-type dedup: remove any guest entry with the same email/mobile before adding the registered user
+    setPending((prev) => {
+      const withoutConflicts = prev.filter((p) => {
+        if (
+          u.email &&
+          p.email &&
+          p.email.toLowerCase() === u.email.toLowerCase()
+        )
+          return false;
+        if (u.mobile && p.mobile && p.mobile.trim() === u.mobile.trim())
+          return false;
+        return true;
+      });
+      return [
+        ...withoutConflicts,
+        {
+          key: u.id,
+          userId: u.id,
+          name: u.name,
+          email: u.email || u.mobile,
+          avatar: u.avatar,
+          isRegistered: true,
+          locked: true,
+        },
+      ];
+    });
     setSearchQuery('');
     setSuggestions([]);
     setShowSuggestions(false);
@@ -192,8 +223,35 @@ const GroupDetail = () => {
     setPending((prev) => prev.filter((p) => p.key !== key));
   };
 
+  // Returns true if a candidate conflicts with anything already in the pending basket.
+  // Checks userId, email, AND mobile to catch cross-type duplicates (registered + guest same email).
+  const isAlreadyPending = (candidate: {
+    userId?: string | null;
+    email?: string;
+    mobile?: string;
+  }) =>
+    pending.some((p) => {
+      if (candidate.userId && p.userId && candidate.userId === p.userId)
+        return true;
+      if (
+        candidate.email &&
+        candidate.email.trim() !== '' &&
+        p.email &&
+        p.email.toLowerCase() === candidate.email.toLowerCase()
+      )
+        return true;
+      if (
+        candidate.mobile &&
+        candidate.mobile.trim() !== '' &&
+        p.mobile &&
+        p.mobile.trim() === candidate.mobile.trim()
+      )
+        return true;
+      return false;
+    });
+
   // Add a manually-typed (unregistered) member
-  const addManualMember = () => {
+  const addManualMember = async () => {
     const name = manualForm.name.trim();
     const email = manualForm.email.trim().toLowerCase();
     const mobile = manualForm.mobile.trim();
@@ -213,23 +271,60 @@ const GroupDetail = () => {
       setManualError('Enter a valid 10-digit mobile number');
       return;
     }
+    // Cross-type dedup: catches guest added after a registered user with the same contact info
+    if (email && isAlreadyPending({ email })) {
+      setManualError('A member with this email is already in the list');
+      return;
+    }
+    if (mobile && isAlreadyPending({ mobile })) {
+      setManualError('A member with this mobile number is already in the list');
+      return;
+    }
     setManualError('');
-    const contact = manualForm.contactMethod === 'email' ? email : mobile;
-    setPending((prev) => [
-      ...prev,
-      {
-        key: `manual_${Date.now()}`,
-        userId: null,
-        name,
-        email: manualForm.contactMethod === 'email' ? email : '',
-        mobile: manualForm.contactMethod === 'mobile' ? mobile : undefined,
-        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-          name
-        )}`,
-        isRegistered: false,
-        locked: false,
-      } as PendingMember,
-    ]);
+    // Check if this contact is actually a registered user — auto-promote if so
+    const contact =
+      manualForm.contactMethod === 'email' ? { email } : { mobile };
+    const registered = await groupService.lookupUser(contact);
+    const newEntry: PendingMember = registered
+      ? {
+          key: registered.id,
+          userId: registered.id,
+          name: registered.name,
+          email: registered.email,
+          mobile: registered.mobile || undefined,
+          avatar: registered.avatar,
+          isRegistered: true,
+          locked: true,
+        }
+      : {
+          key: `manual_${Date.now()}`,
+          userId: null,
+          name,
+          email: manualForm.contactMethod === 'email' ? email : '',
+          mobile: manualForm.contactMethod === 'mobile' ? mobile : undefined,
+          avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+            name
+          )}`,
+          isRegistered: false,
+          locked: false,
+        };
+    // Remove any existing entry with the same contact info, then add the resolved entry
+    setPending((prev) => {
+      const withoutConflicts = prev.filter((p) => {
+        if (email && p.email && p.email.toLowerCase() === email) return false;
+        if (mobile && p.mobile && p.mobile.trim() === mobile) return false;
+        return true;
+      });
+      return [...withoutConflicts, newEntry];
+    });
+    if (registered) {
+      setManualError('');
+      // Show a brief notice that this was auto-promoted (via memberError field reused as info)
+      setMemberError(
+        `ℹ️ ${name} is registered on SplitWise — added as registered user.`
+      );
+      setTimeout(() => setMemberError(''), 4000);
+    }
     setManualForm({
       name: '',
       email: '',
@@ -239,7 +334,6 @@ const GroupDetail = () => {
     setShowManual(false);
     setSearchQuery('');
     setSearchDone(false);
-    void contact; // used for dedup — kept for clarity
   };
 
   const closeMemberModal = () => {
@@ -1306,14 +1400,26 @@ const GroupDetail = () => {
             <label className="form-label">Add from existing members</label>
             <div className="existing-members-grid">
               {existingPool.map((m) => {
-                // Match pending by userId if available, otherwise by email
-                const picked = pending.some((p) =>
-                  m.userId
-                    ? p.key === m.userId
-                    : p.email &&
-                      m.email &&
-                      p.email.toLowerCase() === m.email.toLowerCase()
-                );
+                // Picked = any pending entry matches by userId, email, OR mobile
+                const picked = pending.some((p) => {
+                  if (m.userId && p.userId && m.userId === p.userId)
+                    return true;
+                  if (
+                    m.email &&
+                    m.email.trim() !== '' &&
+                    p.email &&
+                    p.email.toLowerCase() === m.email.toLowerCase()
+                  )
+                    return true;
+                  if (
+                    m.mobile &&
+                    m.mobile.trim() !== '' &&
+                    p.mobile &&
+                    p.mobile.trim() === m.mobile.trim()
+                  )
+                    return true;
+                  return false;
+                });
                 return (
                   <button
                     key={m.userId ?? m.id}
@@ -1321,31 +1427,62 @@ const GroupDetail = () => {
                     className={`existing-member-chip ${picked ? 'picked' : ''}`}
                     onClick={() => {
                       if (picked) {
+                        // Remove all conflicting entries (covers the cross-type case)
                         setPending((prev) =>
-                          prev.filter((p) =>
-                            m.userId
-                              ? p.key !== m.userId
-                              : !(
-                                  p.email &&
-                                  m.email &&
-                                  p.email.toLowerCase() ===
-                                    m.email.toLowerCase()
-                                )
-                          )
+                          prev.filter((p) => {
+                            if (m.userId && p.userId && m.userId === p.userId)
+                              return false;
+                            if (
+                              m.email &&
+                              m.email.trim() !== '' &&
+                              p.email &&
+                              p.email.toLowerCase() === m.email.toLowerCase()
+                            )
+                              return false;
+                            if (
+                              m.mobile &&
+                              m.mobile.trim() !== '' &&
+                              p.mobile &&
+                              p.mobile.trim() === m.mobile.trim()
+                            )
+                              return false;
+                            return true;
+                          })
                         );
                       } else {
-                        setPending((prev) => [
-                          ...prev,
-                          {
-                            key: m.userId ?? m.id,
-                            userId: m.userId,
-                            name: m.name,
-                            email: m.email,
-                            avatar: m.avatar,
-                            isRegistered: !!m.userId,
-                            locked: true,
-                          },
-                        ]);
+                        // Remove any guest duplicate with same contact info, then add the selected entry
+                        setPending((prev) => {
+                          const withoutConflicts = prev.filter((p) => {
+                            if (
+                              m.email &&
+                              m.email.trim() !== '' &&
+                              p.email &&
+                              p.email.toLowerCase() === m.email.toLowerCase()
+                            )
+                              return false;
+                            if (
+                              m.mobile &&
+                              m.mobile.trim() !== '' &&
+                              p.mobile &&
+                              p.mobile.trim() === m.mobile.trim()
+                            )
+                              return false;
+                            return true;
+                          });
+                          return [
+                            ...withoutConflicts,
+                            {
+                              key: m.userId ?? m.id,
+                              userId: m.userId,
+                              name: m.name,
+                              email: m.email,
+                              mobile: m.mobile,
+                              avatar: m.avatar,
+                              isRegistered: !!m.userId,
+                              locked: true,
+                            },
+                          ];
+                        });
                       }
                     }}
                   >
@@ -1371,22 +1508,39 @@ const GroupDetail = () => {
         {existingPool.length > 0 && <div className="divider" />}
 
         {/* ── Search registered users ── */}
-        <div
-          className="form-group"
-          style={{ position: 'relative' }}
-          ref={suggestionsRef}
-        >
+        <div className="form-group" ref={suggestionsRef}>
           <label className="form-label">Search by name or email</label>
           <input
+            ref={searchInputRef}
             className="form-control"
             placeholder="Type to search registered users…"
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
-            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            onFocus={() => {
+              if (suggestions.length > 0) {
+                const rect = searchInputRef.current?.getBoundingClientRect();
+                if (rect)
+                  setSuggestionRect({
+                    top: rect.bottom + 4,
+                    left: rect.left,
+                    width: rect.width,
+                  });
+                setShowSuggestions(true);
+              }
+            }}
             autoComplete="off"
           />
-          {showSuggestions && suggestions.length > 0 && (
-            <div className="member-suggestions">
+          {showSuggestions && suggestions.length > 0 && suggestionRect && (
+            <div
+              className="member-suggestions"
+              style={{
+                position: 'fixed',
+                top: suggestionRect.top,
+                left: suggestionRect.left,
+                width: suggestionRect.width,
+                zIndex: 2000,
+              }}
+            >
               {suggestions.map((u) => (
                 <button
                   key={u.id}
@@ -1425,7 +1579,12 @@ const GroupDetail = () => {
                 type="button"
                 className="btn btn-outline btn-sm"
                 onClick={() => {
-                  setManualForm({ name: searchQuery, email: '', mobile:'', contactMethod:'email' });
+                  setManualForm({
+                    name: searchQuery,
+                    email: '',
+                    mobile: '',
+                    contactMethod: 'email',
+                  });
                   setShowManual(true);
                   setSearchQuery('');
                   setSearchDone(false);
@@ -1550,7 +1709,7 @@ const GroupDetail = () => {
             <button
               type="button"
               className="btn btn-primary btn-sm w-full"
-              onClick={addManualMember}
+              onClick={() => void addManualMember()}
             >
               Add to list
             </button>
