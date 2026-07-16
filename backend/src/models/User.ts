@@ -1,6 +1,6 @@
 import { Schema, model, Document } from 'mongoose';
-
-export type MemberLinkStatus = 'pending' | 'linked' | 'failed';
+import { MemberLinkStatus } from '../utils/types';
+import { MEMBER_LINK_STATUSES } from '../utils/constants';
 
 export interface IUser extends Document {
   name: string;
@@ -32,8 +32,8 @@ const userSchema = new Schema<IUser>(
     avatar: { type: String, required: true },
     memberLinkStatus: {
       type: String,
-      enum: ['pending', 'linked', 'failed'],
-      default: 'pending',
+      enum: MEMBER_LINK_STATUSES,
+      default: 'pending' satisfies MemberLinkStatus,
     },
   },
   { timestamps: true }

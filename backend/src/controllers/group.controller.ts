@@ -18,6 +18,7 @@ const formatGroup = (group: InstanceType<typeof Group>) => ({
     id: m._id.toString(),
     name: m.name,
     email: m.email ?? '',
+    ...(m.mobile ? { mobile: m.mobile } : {}),
     avatar: m.avatar,
     groupId: group._id.toString(),
     userId: m.userId?.toString() ?? null,
@@ -34,7 +35,7 @@ const membershipQuery = async (
     { createdBy: new Types.ObjectId(userId) },
     { 'members.userId': new Types.ObjectId(userId) },
   ];
-  if (user?.email) $or.push({ 'members.email': user.email });
+  if (user?.email)  $or.push({ 'members.email':  user.email });
   if (user?.mobile) $or.push({ 'members.mobile': user.mobile });
   return { $or };
 };
@@ -45,10 +46,7 @@ const findAccessibleGroup = async (groupId: string, userId: string) => {
   return Group.findOne({ _id: groupId, ...query });
 };
 
-export const getGroups = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const getGroups = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const query = await membershipQuery(req.userId!);
     const groups = await Group.find(query);
@@ -58,35 +56,31 @@ export const getGroups = async (
   }
 };
 
-export const createGroup = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const createGroup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, description, category, simplifyDebts, members } =
-      req.body as {
-        name: string;
-        description?: string;
-        category?: string;
-        simplifyDebts?: boolean;
-        members?: Array<{ name: string; email?: string; avatar?: string }>;
-      };
+    const { name, description, category, simplifyDebts, members } = req.body as {
+      name: string;
+      description?: string;
+      category?: string;
+      simplifyDebts?: boolean;
+      members?: Array<{ name: string; email?: string; mobile?: string; avatar?: string }>;
+    };
 
     // Resolve userIds for members that have a matching registered user
     const resolvedMembers = await Promise.all(
       (members ?? []).map(async (m) => {
-        const registeredUser = m.email
-          ? await User.findOne({ email: m.email.toLowerCase() }).select('_id')
-          : null;
+        let registeredUser = null;
+        if (m.email) {
+          registeredUser = await User.findOne({ email: m.email.toLowerCase() }).select('_id');
+        } else if (m.mobile) {
+          registeredUser = await User.findOne({ mobile: m.mobile.trim() }).select('_id');
+        }
         return {
           _id: new Types.ObjectId(),
           name: m.name,
           email: m.email ?? '',
-          avatar:
-            m.avatar ??
-            `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-              m.name
-            )}`,
+          ...(m.mobile ? { mobile: m.mobile.trim() } : {}),
+          avatar: m.avatar ?? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.name)}`,
           userId: registeredUser?._id ?? undefined,
         };
       })
@@ -108,10 +102,7 @@ export const createGroup = async (
   }
 };
 
-export const updateGroup = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const updateGroup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     // Check group exists at all first
     const exists = await Group.findById(req.params.id);
@@ -139,10 +130,7 @@ export const updateGroup = async (
   }
 };
 
-export const deleteGroup = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const deleteGroup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     // Check group exists at all first
     const exists = await Group.findById(req.params.id);
@@ -153,9 +141,7 @@ export const deleteGroup = async (
 
     // Only the creator can delete a group
     if (exists.createdBy.toString() !== req.userId) {
-      res
-        .status(403)
-        .json({ error: 'Only the group creator can delete this group' });
+      res.status(403).json({ error: 'Only the group creator can delete this group' });
       return;
     }
 
@@ -168,22 +154,20 @@ export const deleteGroup = async (
   }
 };
 
-export const addMember = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const addMember = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const {
-      name,
-      email,
-      avatar,
-      userId: providedUserId,
-    } = req.body as {
+    const { name, email, mobile, avatar, userId: providedUserId } = req.body as {
       name: string;
       email?: string;
+      mobile?: string;
       avatar?: string;
       userId?: string | null;
     };
+
+    if (!email && !mobile && !providedUserId) {
+      res.status(400).json({ error: 'Either email or mobile is required for unregistered members' });
+      return;
+    }
 
     // Any group member (not just creator) can add new members
     const group = await findAccessibleGroup(req.params.groupId, req.userId!);
@@ -192,65 +176,52 @@ export const addMember = async (
       return;
     }
 
-    // Resolve the registered user: prefer the explicit userId from the client,
-    // fall back to email lookup so legacy/manual flows still work.
+    // Resolve the registered user: prefer explicit userId, then email, then mobile
     let resolvedUserId: Types.ObjectId | undefined;
     if (providedUserId) {
       const found = await User.findById(providedUserId).select('_id');
       resolvedUserId = found?._id as Types.ObjectId | undefined;
     } else if (email) {
-      const found = await User.findOne({ email: email.toLowerCase() }).select(
-        '_id'
-      );
+      const found = await User.findOne({ email: email.toLowerCase() }).select('_id');
+      resolvedUserId = found?._id as Types.ObjectId | undefined;
+    } else if (mobile) {
+      const found = await User.findOne({ mobile: mobile.trim() }).select('_id');
       resolvedUserId = found?._id as Types.ObjectId | undefined;
     }
 
-    // Prevent duplicate: userId takes priority, then email
-    if (
-      resolvedUserId &&
-      group.members.some(
-        (m) => m.userId?.toString() === resolvedUserId!.toString()
-      )
-    ) {
-      res
-        .status(409)
-        .json({ error: 'This user is already a member of the group' });
+    // Prevent duplicates: userId first, then email, then mobile
+    if (resolvedUserId && group.members.some((m) => m.userId?.toString() === resolvedUserId!.toString())) {
+      res.status(409).json({ error: 'This user is already a member of the group' });
       return;
     }
-    if (
-      !resolvedUserId &&
-      email &&
-      group.members.some((m) => m.email?.toLowerCase() === email.toLowerCase())
-    ) {
-      res
-        .status(409)
-        .json({
-          error: 'A member with this email already exists in the group',
-        });
+    if (!resolvedUserId && email && group.members.some((m) => !m.userId && m.email?.toLowerCase() === email.toLowerCase())) {
+      res.status(409).json({ error: 'A member with this email already exists in the group' });
+      return;
+    }
+    if (!resolvedUserId && mobile && group.members.some((m) => !m.userId && m.mobile?.trim() === mobile.trim())) {
+      res.status(409).json({ error: 'A member with this mobile number already exists in the group' });
       return;
     }
 
     const memberId = new Types.ObjectId();
-    const memberAvatar =
-      avatar ??
-      `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-        name
-      )}`;
+    const memberAvatar = avatar ?? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
     const newMember = {
       _id: memberId,
       name,
       email: email ?? '',
+      ...(mobile ? { mobile: mobile.trim() } : {}),
       avatar: memberAvatar,
       userId: resolvedUserId,
     };
 
-    group.members.push(newMember as (typeof group.members)[0]);
+    group.members.push(newMember as typeof group.members[0]);
     await group.save();
 
     res.status(201).json({
       id: memberId.toString(),
       name,
       email: email ?? '',
+      ...(mobile ? { mobile: mobile.trim() } : {}),
       avatar: memberAvatar,
       groupId: group._id.toString(),
       userId: resolvedUserId?.toString() ?? null,
@@ -260,10 +231,7 @@ export const addMember = async (
   }
 };
 
-export const removeMember = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const removeMember = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     // Any group member can remove others
     const group = await findAccessibleGroup(req.params.groupId, req.userId!);
@@ -299,10 +267,7 @@ export const removeMember = async (
  *
  * Marks splits fully paid when paidAmount reaches their full amount.
  */
-export const recordPayment = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const recordPayment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { groupId } = req.params;
     const { fromMemberId, toMemberId, amount } = req.body as {
@@ -312,11 +277,7 @@ export const recordPayment = async (
     };
 
     if (!fromMemberId || !toMemberId || !amount || amount <= 0) {
-      res
-        .status(400)
-        .json({
-          error: 'fromMemberId, toMemberId and a positive amount are required',
-        });
+      res.status(400).json({ error: 'fromMemberId, toMemberId and a positive amount are required' });
       return;
     }
 
@@ -361,90 +322,70 @@ export const recordPayment = async (
     const appliedAmount = parseFloat((amount - remaining).toFixed(2));
 
     // Persist the payment history record
-    const fromMember = group.members.find(
-      (m) => m._id.toString() === fromMemberId
-    );
-    const toMember = group.members.find((m) => m._id.toString() === toMemberId);
+    const fromMember = group.members.find(m => m._id.toString() === fromMemberId);
+    const toMember   = group.members.find(m => m._id.toString() === toMemberId);
     await Payment.create({
-      groupId: group._id,
+      groupId:        group._id,
       fromMemberId,
       fromMemberName: fromMember?.name ?? fromMemberId,
       toMemberId,
-      toMemberName: toMember?.name ?? toMemberId,
+      toMemberName:   toMember?.name ?? toMemberId,
       amount,
       appliedAmount,
     });
 
-    res.json({
-      message: 'Payment recorded',
-      appliedAmount,
-      leftover: remaining,
-    });
+    res.json({ message: 'Payment recorded', appliedAmount, leftover: remaining });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Server error';
     res.status(500).json({ error: msg });
   }
 };
 
-export const getPayments = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const getPayments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const group = await findAccessibleGroup(req.params.groupId, req.userId!);
     if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
-    const payments = await Payment.find({ groupId: group._id }).sort({
-      createdAt: -1,
-    });
-    res.json(
-      payments.map((p) => ({
-        id: p._id.toString(),
-        groupId: p.groupId.toString(),
-        fromMemberId: p.fromMemberId,
-        fromMemberName: p.fromMemberName,
-        toMemberId: p.toMemberId,
-        toMemberName: p.toMemberName,
-        amount: p.amount,
-        appliedAmount: p.appliedAmount,
-        date: p.date,
-      }))
-    );
+    const payments = await Payment.find({ groupId: group._id }).sort({ createdAt: -1 });
+    res.json(payments.map(p => ({
+      id:             p._id.toString(),
+      groupId:        p.groupId.toString(),
+      fromMemberId:   p.fromMemberId,
+      fromMemberName: p.fromMemberName,
+      toMemberId:     p.toMemberId,
+      toMemberName:   p.toMemberName,
+      amount:         p.amount,
+      appliedAmount:  p.appliedAmount,
+      date:           p.date,
+    })));
   } catch {
     res.status(500).json({ error: 'Server error' });
   }
 };
 
-export const getGroupExpenses = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const getGroupExpenses = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const group = await findAccessibleGroup(req.params.groupId, req.userId!);
     if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
-    const expenses = await Expense.find({ groupId: group._id }).sort({
-      date: -1,
-    });
-    res.json(
-      expenses.map((e) => ({
-        id: e._id.toString(),
-        groupId: e.groupId.toString(),
-        title: e.title,
-        amount: e.amount,
-        category: e.category,
-        paidBy: e.paidBy,
-        paidByName: e.paidByName,
-        splits: e.splits,
-        date: e.date,
-        notes: e.notes,
-        receiptUrls: e.receiptUrls ?? [],
-      }))
-    );
+    const expenses = await Expense.find({ groupId: group._id }).sort({ date: -1 });
+    res.json(expenses.map((e) => ({
+      id: e._id.toString(),
+      groupId: e.groupId.toString(),
+      title: e.title,
+      amount: e.amount,
+      category: e.category,
+      paidBy: e.paidBy,
+      paidByName: e.paidByName,
+      splits: e.splits,
+      date: e.date,
+      notes: e.notes,
+      receiptUrls: e.receiptUrls ?? [],
+    })));
   } catch {
     res.status(500).json({ error: 'Server error' });
   }
