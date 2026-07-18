@@ -32,7 +32,7 @@ export const parseApiError = (err: unknown): string => {
     if (res?.data?.error) return res.data.error;
     if (res?.data?.message) return res.data.message;
   }
-  if (err instanceof Error) return err.message;
+  // if (err instanceof Error) return err.message;
   return 'Something went wrong. Please try again.';
 };
 

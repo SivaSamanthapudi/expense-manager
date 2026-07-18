@@ -1,10 +1,9 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Sidebar from '../navbar/Sidebar';
 import ChatTray from '../chat/ChatTray';
-import { ReactNode } from 'react';
 
-const ProtectedRoute = ({ children }: { children: ReactNode }) => {
+const ProtectedRoute = () => {
   const { user, status } = useAuth();
 
   if (status === 'loading' || status === 'idle') {
@@ -29,7 +28,9 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   return (
     <div className="layout">
       <Sidebar />
-      <div className="main-content">{children}</div>
+      <div className="main-content">
+        <Outlet />
+      </div>
       <ChatTray />
     </div>
   );

@@ -13,24 +13,29 @@ import ForgotPassword from '../pages/Auth/ForgotPassword';
 import ResetPassword from '../pages/Auth/ResetPassword';
 
 const AppRoutes = () => (
-  <Routes>
-    <Route path="/login" element={<Login />} />
-    <Route path="/signup" element={<Signup />} />
-    <Route path="/forgot-password" element={<ForgotPassword />} />
-    <Route path="/reset-password" element={<ResetPassword />} />
+<Routes>
+  {/* Public Routes */}
+  <Route path="/login" element={<Login />} />
+  <Route path="/signup" element={<Signup />} />
+  <Route path="/forgot-password" element={<ForgotPassword />} />
+  <Route path="/reset-password" element={<ResetPassword />} />
 
-    <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-    <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
-    <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
-    <Route path="/expenses" element={<ProtectedRoute><Expenses /></ProtectedRoute>} />
-    <Route path="/expenses/new" element={<ProtectedRoute><ExpenseForm /></ProtectedRoute>} />
-    <Route path="/expenses/edit/:id" element={<ProtectedRoute><ExpenseForm /></ProtectedRoute>} />
-    <Route path="/people" element={<ProtectedRoute><People /></ProtectedRoute>} />
-    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+  {/* Protected Routes (Grouped) */}
+  <Route element={<ProtectedRoute />}>
+    <Route path="/dashboard" element={<Dashboard />} />
+    <Route path="/groups" element={<Groups />} />
+    <Route path="/groups/:id" element={<GroupDetail />} />
+    <Route path="/expenses" element={<Expenses />} />
+    <Route path="/expenses/new" element={<ExpenseForm />} />
+    <Route path="/expenses/edit/:id" element={<ExpenseForm />} />
+    <Route path="/people" element={<People />} />
+    <Route path="/profile" element={<Profile />} />
+  </Route>
 
-    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-    <Route path="*" element={<Navigate to="/dashboard" replace />} />
-  </Routes>
+  {/* Wildcard & Redirects */}
+  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+</Routes>
 );
 
 export default AppRoutes;

@@ -55,13 +55,23 @@ const Groups = () => {
   const [saving, setSaving] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const handleDeleteGroup = async (groupId: string, groupName: string) => {
-    const hasUnsettled = expenses
-      .filter((e) => e.groupId === groupId)
-      .some((e) => e.splits.some((s) => !s.paid));
-    if (hasUnsettled) {
+  const handleDeleteGroup = async (
+    groupId: string,
+    groupName: string,
+    transactions: any[]
+  ) => {
+    if (transactions.length > 0) {
+      const debtSummary = transactions
+        .slice(0, 2)
+        .map(
+          (t: any) =>
+            `${t.fromName} → ${t.toName} ₹${t.amount.toLocaleString()}`
+        )
+        .join(', ');
+      const extra =
+        transactions.length > 2 ? ` and ${transactions.length - 2} more` : '';
       setDeleteError(
-        `Cannot delete "${groupName}" — clear all payments first.`
+        `Cannot delete "${groupName}" — settle all debts first (${debtSummary}${extra}).`
       );
       return;
     }
@@ -111,18 +121,18 @@ const Groups = () => {
   const openCreate = () => {
     setEditingGroup(null);
     setForm(EMPTY_FORM);
-
     // Pre-select the current user so they are always in the group by default
     const selfMember: Omit<Member, 'groupId'> | null = user
       ? {
-        id: user.id,
-        name: user.name,
-        email: user.email ?? '',
-        avatar: user.avatar,
-        userId: user.id,
-      }
+          id: user.id,
+          name: user.name,
+          email: user.email ?? '',
+          avatar: user.avatar,
+          userId: user.id,
+        }
       : null;
-    setSelectedMembers(selfMember ? [selfMember] : []); setStep('details');
+    setSelectedMembers(selfMember ? [selfMember] : []);
+    setStep('details');
     setError('');
     setMemberError('');
     setModalOpen(true);
@@ -276,23 +286,23 @@ const Groups = () => {
     const registered = await groupService.lookupUser(contact);
     const newEntry: Omit<Member, 'groupId'> = registered
       ? {
-        id: registered.id,
-        name: registered.name,
-        email: registered.email,
-        mobile: registered.mobile || undefined,
-        avatar: registered.avatar,
-        userId: registered.id,
-      }
+          id: registered.id,
+          name: registered.name,
+          email: registered.email,
+          mobile: registered.mobile || undefined,
+          avatar: registered.avatar,
+          userId: registered.id,
+        }
       : {
-        id: `new_${Date.now()}`,
-        name,
-        email: newMember.contactMethod === 'email' ? email : '',
-        ...(newMember.contactMethod === 'mobile' ? { mobile } : {}),
-        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-          name
-        )}`,
-        userId: null,
-      };
+          id: `new_${Date.now()}`,
+          name,
+          email: newMember.contactMethod === 'email' ? email : '',
+          ...(newMember.contactMethod === 'mobile' ? { mobile } : {}),
+          avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+            name
+          )}`,
+          userId: null,
+        };
     // Replace any conflicting entry with the same contact info
     setSelectedMembers((prev) => {
       const withoutConflicts = prev.filter((m) => {
@@ -381,26 +391,26 @@ const Groups = () => {
             const transactions = g.simplifyDebts
               ? simplifyDebts(balances)
               : groupExpenses.flatMap((expense) =>
-                expense.splits
-                  .filter((s) => !s.paid && s.memberId !== expense.paidBy)
-                  .map((s) => ({
-                    fromId: s.memberId,
-                    fromName: s.memberName,
-                    toId: expense.paidBy,
-                    toName: expense.paidByName,
-                    amount: s.amount - (s.paidAmount ?? 0),
-                  }))
-                  .filter((t) => t.amount > 0.01)
-              );
+                  expense.splits
+                    .filter((s) => !s.paid && s.memberId !== expense.paidBy)
+                    .map((s) => ({
+                      fromId: s.memberId,
+                      fromName: s.memberName,
+                      toId: expense.paidBy,
+                      toName: expense.paidByName,
+                      amount: s.amount - (s.paidAmount ?? 0),
+                    }))
+                    .filter((t) => t.amount > 0.01)
+                );
             const youOwe = selfMember
               ? transactions
-                .filter((t) => t.fromId === selfMember.id)
-                .reduce((s, t) => s + t.amount, 0)
+                  .filter((t) => t.fromId === selfMember.id)
+                  .reduce((s, t) => s + t.amount, 0)
               : 0;
             const owedToYou = selfMember
               ? transactions
-                .filter((t) => t.toId === selfMember.id)
-                .reduce((s, t) => s + t.amount, 0)
+                  .filter((t) => t.toId === selfMember.id)
+                  .reduce((s, t) => s + t.amount, 0)
               : 0;
             const isSettled = selfMember && youOwe === 0 && owedToYou === 0;
 
@@ -434,7 +444,7 @@ const Groups = () => {
                       className="btn-icon delete-btn"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDeleteGroup(g.id, g.name);
+                        handleDeleteGroup(g.id, g.name, transactions);
                       }}
                       title="Delete group"
                     >
@@ -523,8 +533,8 @@ const Groups = () => {
           editingGroup
             ? `Edit "${editingGroup.name}"`
             : step === 'details'
-              ? 'Create New Group'
-              : `Add Members to "${form.name}"`
+            ? 'Create New Group'
+            : `Add Members to "${form.name}"`
         }
         size="md"
         footer={
@@ -565,8 +575,9 @@ const Groups = () => {
               <button className="btn btn-primary" onClick={handleCreate}>
                 Create Group{' '}
                 {selectedMembers.length > 0
-                  ? `(${selectedMembers.length} member${selectedMembers.length > 1 ? 's' : ''
-                  })`
+                  ? `(${selectedMembers.length} member${
+                      selectedMembers.length > 1 ? 's' : ''
+                    })`
                   : ''}
               </button>
             </>
@@ -663,8 +674,9 @@ const Groups = () => {
                       <button
                         key={m.userId ?? m.id}
                         type="button"
-                        className={`existing-member-chip ${picked ? 'picked' : ''
-                          }`}
+                        className={`existing-member-chip ${
+                          picked ? 'picked' : ''
+                        }`}
                         onClick={() => toggleExistingMember(m)}
                       >
                         <img
@@ -686,7 +698,6 @@ const Groups = () => {
                 <div className="divider" />
               </div>
             )}
-
 
             {/* Add a brand new member */}
             <div className="form-group">
@@ -715,8 +726,9 @@ const Groups = () => {
                 >
                   <button
                     type="button"
-                    className={`auth-toggle-btn${newMember.contactMethod === 'email' ? ' active' : ''
-                      }`}
+                    className={`auth-toggle-btn${
+                      newMember.contactMethod === 'email' ? ' active' : ''
+                    }`}
                     style={{ padding: '8px 12px', fontSize: 12 }}
                     onClick={() =>
                       setNewMember((f) => ({
@@ -730,8 +742,9 @@ const Groups = () => {
                   </button>
                   <button
                     type="button"
-                    className={`auth-toggle-btn${newMember.contactMethod === 'mobile' ? ' active' : ''
-                      }`}
+                    className={`auth-toggle-btn${
+                      newMember.contactMethod === 'mobile' ? ' active' : ''
+                    }`}
                     style={{ padding: '8px 12px', fontSize: 12 }}
                     onClick={() =>
                       setNewMember((f) => ({

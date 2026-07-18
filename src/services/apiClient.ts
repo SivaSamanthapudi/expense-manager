@@ -24,12 +24,22 @@ const flushQueue = (token: string | null, error: unknown = null) => {
   pendingQueue = [];
 };
 
+const AUTH_SKIP_URLS = [
+  '/auth/login',
+  '/auth/signup',
+  '/auth/refresh',
+  '/auth/forgot-password',
+  '/auth/reset-password'  
+]
+
 // Auto-refresh on 401 — queues concurrent requests while refresh is in flight
 apiClient.interceptors.response.use(
   res => res,
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
-    if (error.response?.status !== 401 || original._retry) {
+    const url = original?.url ?? '';
+    const skipRefresh = AUTH_SKIP_URLS.some(path => url.includes(path));
+    if (error.response?.status !== 401 || original._retry || skipRefresh) {
       return Promise.reject(error);
     }
 
