@@ -1,20 +1,29 @@
+import { useEffect } from 'react';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
+import { useAuth } from '../../context/AuthContext';
+import { useChat } from '../../context/ChatContext';
 import { useNavigate } from 'react-router-dom';
 import './People.css';
 
 const People = () => {
   const { groups } = useGroups();
   const { expenses } = useExpenses();
+  const { user: me } = useAuth();
+  const { onlineUsers, openChat, unreadCounts, registerPeers } = useChat();
   const navigate = useNavigate();
 
-  // Build a deduplicated global people list keyed by email
+  // Build a deduplicated global people list.
+  // Key: userId for registered users, email for unregistered (non-empty email only).
+  // Members with no userId and no email are skipped — they have no stable identity.
   const peopleMap = new Map<
     string,
     {
       name: string;
-      email: string;
+      email?: string;
+      mobile?: string;
       avatar: string;
+      userId: string | null;
       groups: { id: string; name: string }[];
       totalPaid: number;
       totalShare: number;
@@ -23,12 +32,15 @@ const People = () => {
 
   groups.forEach((g) => {
     g.members.forEach((m) => {
-      const key = m.email.toLowerCase();
+      const key = m.userId ?? (m.email ? m.email.toLowerCase() : null);
+      if (!key) return; // no stable identity — skip
       if (!peopleMap.has(key)) {
         peopleMap.set(key, {
           name: m.name,
           email: m.email,
+          mobile: m.mobile,
           avatar: m.avatar,
+          userId: m.userId ?? null,
           groups: [],
           totalPaid: 0,
           totalShare: 0,
@@ -38,7 +50,6 @@ const People = () => {
       if (!entry.groups.find((eg) => eg.id === g.id)) {
         entry.groups.push({ id: g.id, name: g.name });
       }
-      // accumulate financials
       expenses
         .filter((e) => e.groupId === g.id)
         .forEach((e) => {
@@ -49,9 +60,38 @@ const People = () => {
     });
   });
 
-  const people = Array.from(peopleMap.values()).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  );
+  const people = Array.from(peopleMap.values())
+    .filter((p) => !(me?.id && p.userId && p.userId === me.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  useEffect(() => {
+    const peers = people
+      .filter((p) => p.userId)
+      .map((p) => ({
+        userId: p.userId!,
+        name: p.name,
+        avatar: p.avatar,
+        email: p.email,
+      }));
+    if (peers.length > 0) registerPeers(peers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people.length]);
+
+  const handleMessage = (p: {
+    name: string;
+    email?: string;
+    mobile?: string;
+    avatar: string;
+    userId: string | null;
+  }) => {
+    if (!p.userId) return;
+    openChat({
+      userId: p.userId,
+      name: p.name,
+      avatar: p.avatar,
+      email: p.email,
+    });
+  };
 
   return (
     <div className="page-content">
@@ -82,18 +122,55 @@ const People = () => {
         <div className="people-grid">
           {people.map((p) => {
             const net = p.totalPaid - p.totalShare;
+            const isOnline = p.userId ? onlineUsers.has(p.userId) : false;
+            const canChat = !!p.userId;
+            const unread = p.userId ? unreadCounts[p.userId] ?? 0 : 0;
+
             return (
-              <div key={p.email} className="person-card card card-body">
+              <div
+                key={p.userId ?? p.email}
+                className="person-card card card-body"
+              >
                 <div className="person-header">
-                  <img
-                    src={p.avatar}
-                    alt={p.name}
-                    className="avatar avatar-lg"
-                  />
+                  <div className="person-avatar-wrap">
+                    <img
+                      src={p.avatar}
+                      alt={p.name}
+                      className="avatar avatar-lg"
+                    />
+                    {canChat && (
+                      <span
+                        className={`person-online-dot ${
+                          isOnline ? 'person-online-dot--on' : ''
+                        }`}
+                      />
+                    )}
+                  </div>
                   <div className="person-info">
                     <p className="font-semibold">{p.name}</p>
                     <p className="text-xs text-muted">{p.email}</p>
+                    {canChat && (
+                      <p
+                        className={`text-xs person-status-label ${
+                          isOnline ? 'person-status-label--on' : ''
+                        }`}
+                      >
+                        {isOnline ? 'Active now' : 'Offline'}
+                      </p>
+                    )}
                   </div>
+                  {canChat && (
+                    <button
+                      className="btn-message"
+                      onClick={() => handleMessage(p)}
+                      title={`Message ${p.name}`}
+                    >
+                      <span className="btn-message-icon">💬</span>
+                      {unread > 0 && (
+                        <span className="btn-message-badge">{unread}</span>
+                      )}
+                    </button>
+                  )}
                 </div>
 
                 <div className="person-groups">

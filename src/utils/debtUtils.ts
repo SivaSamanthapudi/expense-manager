@@ -17,14 +17,26 @@ export interface MemberBalance {
 export const computeMemberBalances = (group: Group, expenses: Expense[]): MemberBalance[] => {
   const groupExpenses = expenses.filter(e => e.groupId === group.id);
   return group.members.map(m => {
-    const paid = groupExpenses
-      .filter(e => e.paidBy === m.id)
-      .reduce((s, e) => s + e.amount, 0);
-    const share = groupExpenses.reduce((s, e) => {
-      const split = e.splits.find(sp => sp.memberId === m.id);
-      return s + (split?.amount ?? 0);
-    }, 0);
-    return { id: m.id, name: m.name, net: paid - share };
+    let net = 0;
+
+    for (const e of groupExpenses) {
+      const isPayer = e.paidBy === m.id;
+
+      for (const split of e.splits) {
+        const remaining = split.paid ? 0 : split.amount - (split.paidAmount ?? 0);
+
+        if (split.memberId === m.id) {
+          // This is my share — if I'm also the payer, I've already covered it (no net change)
+          // If I'm NOT the payer, I owe `remaining` to the payer
+          if (!isPayer) net -= remaining;
+        } else if (isPayer) {
+          // This is someone else's share that I paid for — they still owe me `remaining`
+          net += remaining;
+        }
+      }
+    }
+
+    return { id: m.id, name: m.name, net };
   });
 };
 

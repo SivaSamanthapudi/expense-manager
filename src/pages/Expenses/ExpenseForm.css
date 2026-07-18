@@ -121,3 +121,130 @@
   color: var(--primary);
   line-height: 1;
 }
+
+/* ── Receipt upload ── */
+.receipt-dropzone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--secondary);
+}
+.receipt-dropzone:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.receipt-dropzone-icon { font-size: 20px; }
+.receipt-dropzone-text { font-size: 13px; color: var(--text-muted); }
+
+.mt-2 { margin-top: 8px; }
+
+/* ── Attachment list (multi-file) ── */
+.receipt-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.receipt-attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.receipt-attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: background 0.1s;
+}
+.receipt-attachment-item:hover { background: #f1f5f9; }
+
+.receipt-attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.receipt-attachment-icon { font-size: 18px; flex-shrink: 0; }
+
+.receipt-attachment-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.receipt-attachment-preview-hint {
+  font-size: 11px;
+  color: var(--primary);
+  white-space: nowrap;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.receipt-attachment-chip:hover .receipt-attachment-name { color: var(--primary); }
+.receipt-attachment-chip:hover .receipt-attachment-preview-hint { opacity: 1; }
+
+.receipt-new-badge {
+  font-size: 10px;
+  background: #d1fae5;
+  color: #065f46;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.receipt-remove-x {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.receipt-remove-x:hover { background: #fee2e2; color: var(--danger); }
+
+.receipt-dropzone-compact {
+  padding: 8px 14px;
+  margin-top: 4px;
+}
+.receipt-dropzone-compact .receipt-dropzone-text { font-size: 12px; }

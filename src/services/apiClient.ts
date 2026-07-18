@@ -4,7 +4,7 @@ export const TOKEN_KEY = 'auth_token';
 export const REFRESH_TOKEN_KEY = 'auth_refresh_token';
 
 export const apiClient = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:4000/api',
+  baseURL: process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:3000/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -24,12 +24,22 @@ const flushQueue = (token: string | null, error: unknown = null) => {
   pendingQueue = [];
 };
 
+const AUTH_SKIP_URLS = [
+  '/auth/login',
+  '/auth/signup',
+  '/auth/refresh',
+  '/auth/forgot-password',
+  '/auth/reset-password'  
+]
+
 // Auto-refresh on 401 — queues concurrent requests while refresh is in flight
 apiClient.interceptors.response.use(
   res => res,
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
-    if (error.response?.status !== 401 || original._retry) {
+    const url = original?.url ?? '';
+    const skipRefresh = AUTH_SKIP_URLS.some(path => url.includes(path));
+    if (error.response?.status !== 401 || original._retry || skipRefresh) {
       return Promise.reject(error);
     }
 
@@ -53,7 +63,7 @@ apiClient.interceptors.response.use(
       if (!refreshToken) throw new Error('No refresh token');
 
       const { data } = await axios.post(
-        `${process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:4000/api'}/auth/refresh`,
+        `${process.env.REACT_APP_API_BASE_URL ?? 'http://localhost:3000/api/'}auth/refresh`,
         { refreshToken },
       );
 

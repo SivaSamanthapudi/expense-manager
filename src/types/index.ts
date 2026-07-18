@@ -4,7 +4,7 @@ export const GroupCategory = {
   Food: 'food',
   Other: 'other',
 } as const;
-export type GroupCategory = typeof GroupCategory[keyof typeof GroupCategory];
+export type GroupCategory = (typeof GroupCategory)[keyof typeof GroupCategory];
 export const GROUP_CATEGORIES = Object.values(GroupCategory);
 
 export const ExpenseCategory = {
@@ -15,22 +15,29 @@ export const ExpenseCategory = {
   Utilities: 'utilities',
   Other: 'other',
 } as const;
-export type ExpenseCategory = typeof ExpenseCategory[keyof typeof ExpenseCategory];
+export type ExpenseCategory =
+  (typeof ExpenseCategory)[keyof typeof ExpenseCategory];
 export const EXPENSE_CATEGORIES = Object.values(ExpenseCategory);
+
+export type MemberLinkStatus = 'pending' | 'linked' | 'failed';
 
 export interface AuthUser {
   id: string;
   name: string;
-  email: string;
+  email?: string;
+  mobile?: string;
   avatar: string;
+  memberLinkStatus: MemberLinkStatus;
 }
 
 export interface Member {
   id: string;
   name: string;
   email: string;
+  mobile?: string;
   avatar: string;
   groupId: string;
+  userId: string | null; // auth user id — always set for registered users, null for unregistered guests
 }
 
 export interface Group {
@@ -49,6 +56,19 @@ export interface ExpenseSplit {
   memberName: string;
   amount: number;
   paid: boolean;
+  paidAmount?: number;
+}
+
+export interface PaymentRecord {
+  id: string;
+  groupId: string;
+  fromMemberId: string;
+  fromMemberName: string;
+  toMemberId: string;
+  toMemberName: string;
+  amount: number;
+  appliedAmount: number;
+  date: string;
 }
 
 export interface Expense {
@@ -62,4 +82,5 @@ export interface Expense {
   splits: ExpenseSplit[];
   date: string;
   notes: string;
+  receiptUrls?: string[];
 }

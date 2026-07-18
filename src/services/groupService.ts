@@ -1,5 +1,13 @@
-import { Group, Member } from '../types';
 import { apiClient } from './apiClient';
+import { Group, Member, PaymentRecord } from '../types';
+
+export interface UserSuggestion {
+  id: string;
+  name: string;
+  email: string;
+  mobile: string;
+  avatar: string;
+}
 
 export const groupService = {
   async fetchAll(): Promise<Group[]> {
@@ -22,12 +30,65 @@ export const groupService = {
   },
 
   // Members are nested under a group
-  async addMember(groupId: string, payload: Omit<Member, 'id' | 'groupId'>): Promise<Member> {
-    const { data } = await apiClient.post<Member>(`/groups/${groupId}/members`, payload);
+  async addMember(
+    groupId: string,
+    payload: Omit<Member, 'id' | 'groupId'>
+  ): Promise<Member> {
+    // Send userId explicitly so the backend links by ID (works for mobile-only users too)
+    const { data } = await apiClient.post<Member>(
+      `/groups/${groupId}/members`,
+      payload
+    );
     return data;
   },
 
   async removeMember(groupId: string, memberId: string): Promise<void> {
     await apiClient.delete(`/groups/${groupId}/members/${memberId}`);
+  },
+
+  async searchUsers(q: string): Promise<UserSuggestion[]> {
+    if (!q.trim()) return [];
+    const { data } = await apiClient.get<UserSuggestion[]>(
+      `/users/search?q=${encodeURIComponent(q)}`
+    );
+    return data;
+  },
+
+  async lookupUser(contact: {
+    email?: string;
+    mobile?: string;
+  }): Promise<UserSuggestion | null> {
+    try {
+      const param = contact.email
+        ? `email=${encodeURIComponent(contact.email)}`
+        : `mobile=${encodeURIComponent(contact.mobile!)}`;
+      const { data } = await apiClient.get<UserSuggestion>(
+        `/users/lookup?${param}`
+      );
+      return data;
+    } catch {
+      return null; // 404 = not registered, that's fine
+    }
+  },
+
+  async getPayments(groupId: string): Promise<PaymentRecord[]> {
+    const { data } = await apiClient.get<PaymentRecord[]>(
+      `/groups/${groupId}/payments`
+    );
+    return data;
+  },
+
+  async recordPayment(
+    groupId: string,
+    fromMemberId: string,
+    toMemberId: string,
+    amount: number
+  ): Promise<{ appliedAmount: number; leftover: number }> {
+    const { data } = await apiClient.patch(`/groups/${groupId}/payments`, {
+      fromMemberId,
+      toMemberId,
+      amount,
+    });
+    return data;
   },
 };
