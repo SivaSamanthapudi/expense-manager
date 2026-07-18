@@ -1,4 +1,10 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import {
+  Router,
+  Request,
+  Response,
+  NextFunction,
+  RequestHandler,
+} from 'express';
 import { body } from 'express-validator';
 import {
   getExpenses,
@@ -14,7 +20,7 @@ const router = Router();
 
 router.use(verifyAccessToken);
 
-router.get('/', getExpenses);
+router.get('/', getExpenses as RequestHandler);
 
 const wrapUpload = (req: Request, res: Response, next: NextFunction) => {
   receiptUpload(req, res, (err) => {
@@ -32,20 +38,29 @@ router.post(
   [
     body('groupId').notEmpty().withMessage('groupId required'),
     body('title').trim().notEmpty().withMessage('Title required'),
-    body('amount').isFloat({ min: 0 }).withMessage('Amount must be a positive number'),
+    body('amount')
+      .isFloat({ min: 0 })
+      .withMessage('Amount must be a positive number'),
     body('paidBy').notEmpty().withMessage('paidBy required'),
     body('paidByName').notEmpty().withMessage('paidByName required'),
     body('date').isISO8601().withMessage('Valid date required'),
     body('category')
       .optional()
-      .isIn(['food', 'transport', 'accommodation', 'entertainment', 'utilities', 'other'])
+      .isIn([
+        'food',
+        'transport',
+        'accommodation',
+        'entertainment',
+        'utilities',
+        'other',
+      ])
       .withMessage('Invalid category'),
   ],
   handleValidationErrors,
-  createExpense
+  createExpense as RequestHandler
 );
 
-router.patch('/:id', wrapUpload, updateExpense);
-router.delete('/:id', deleteExpense);
+router.patch('/:id', wrapUpload, updateExpense as RequestHandler);
+router.delete('/:id', deleteExpense as RequestHandler);
 
 export default router;
