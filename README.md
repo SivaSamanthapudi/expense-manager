@@ -1,6 +1,6 @@
 # 💰 Expense Manager
 
-A simple and efficient **Expense Management Web Application** built using **Angular** (and supporting modern frontend practices). This app helps users track income, expenses, and maintain better financial discipline with a clean UI and intuitive workflow.
+A simple and efficient **Expense Management Web Application** built using **React.js** (and supporting modern frontend practices). This app helps users track income, expenses, chat among friends and maintain better financial discipline with a clean UI and intuitive workflow.
 
 ---
 
@@ -20,8 +20,9 @@ A simple and efficient **Expense Management Web Application** built using **Angu
 
 * **Frontend:** Reactjs / TypeScript
 * **Styling:** HTML, CSS, Bootstrap
-* **State Management:** Context / Services (if used)
+* **State Management:** Context / Services
 * **Storage:** Local Storage / API (based on implementation)
+* **Backend:** Node.js / Mangoose / MongoDB / Sockets
 
 ---
 
@@ -29,17 +30,20 @@ A simple and efficient **Expense Management Web Application** built using **Angu
 
 ```
 expense-manager/
+├── backend/
 │
 ├── src/
-│   ├── app/
-│   │   ├── components/       # UI components
-│   │   ├── services/         # Business logic & data handling
-│   │   ├── models/           # Interfaces & types
-│   │   └── pages/            # Application pages
-│   │
-│   ├── assets/
-│   └── environments/
-│
+│   ├── components/    # UI components
+│   ├── context/       # Initiatl context & state
+│   ├── hooks/         # Custom hooks
+│   ├── pages/         # Application pages
+│   ├── routes/        # Application route definitions
+│   ├── types/         # Interfaces & types
+│   └── utils/         # Utilities
+│  
+├── app.tsx            # Root component   
+├── index.tsx          # Bootstrap component
+│  
 ├── package.json
 └── README.md
 ```
@@ -70,7 +74,7 @@ npm run start
 ### 4. Open in browser
 
 ```
-http://localhost:3000
+http://localhost:4200
 ```
 
 ---
