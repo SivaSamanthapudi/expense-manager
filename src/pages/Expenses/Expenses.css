@@ -5,10 +5,22 @@
   flex-wrap: wrap;
 }
 
+.expense-filters .form-control {
+  flex: 1;
+  min-width: 140px;
+}
+
+/* ── Table (desktop) ── */
+.expenses-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .expenses-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  min-width: 640px;
 }
 
 .expenses-table thead tr {
@@ -24,6 +36,7 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .expenses-table tbody tr {
@@ -81,4 +94,50 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 90px;
+}
+
+/* ── Mobile card list (hidden on desktop) ── */
+.expense-cards { display: none; flex-direction: column; gap: 10px; }
+
+.expense-card {
+  background: var(--white);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.expense-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.expense-card-info { flex: 1; min-width: 0; }
+.expense-card-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.expense-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.expense-card-amount {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.expense-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.expense-card-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .expenses-table-wrap { display: none; }
+  .expense-cards { display: flex; }
+  .expense-filters .form-control { min-width: 0; }
 }

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
+import PageLoader from '../../components/shared/PageLoader';
 import { type Member, type PaymentRecord } from '../../types';
 import { simplifyDebts } from '../../utils/debtUtils';
 import { groupService } from '../../services/groupService';
@@ -12,8 +13,8 @@ import ExpensesTab from './components/ExpensesTab';
 import BalancesTab from './components/BalancesTab';
 import MembersTab from './components/MembersTab';
 import RecordPaymentModal from './components/RecordPaymentModal';
-import './GroupDetail.css';
 import AddMembersModal from './components/AddMembersModal';
+import './GroupDetail.css';
 
 interface PendingMember {
   key: string;
@@ -37,32 +38,25 @@ const formatDate = (dateString: string) => {
 const GroupDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { groups, addMember, removeMember } = useGroups();
-  const { expenses, deleteExpense, refetch: refetchExpenses } = useExpenses();
+  const { groups, addMember, removeMember, status: groupsStatus } = useGroups();
+  const { expenses, deleteExpense, refetch: refetchExpenses, status: expensesStatus } = useExpenses();
   const { user } = useAuth();
 
-  const group = groups.find((g) => g.id === id);
+  const group = groups.find(g => g.id === id);
 
-  const isSelfMember = (m: Member) =>
-    !!user?.id && !!m.userId && m.userId === user.id;
+  const isSelfMember = (m: Member) => !!user?.id && !!m.userId && m.userId === user.id;
   const canModify = (e: { groupId: string }) => {
     if (!user) return false;
-    return groups.some(
-      (g) => g.id === e.groupId && g.members.some(isSelfMember)
-    );
+    return groups.some(g => g.id === e.groupId && g.members.some(isSelfMember));
   };
 
   // ── Tab ──────────────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<
-    'expenses' | 'members' | 'balances'
-  >('expenses');
+  const [activeTab, setActiveTab] = useState<'expenses' | 'members' | 'balances'>('expenses');
 
   // ── Error banners ────────────────────────────────────────────────────────────
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [leaveError, setLeaveError] = useState<string | null>(null);
-  const [expenseDeleteError, setExpenseDeleteError] = useState<string | null>(
-    null
-  );
+  const [expenseDeleteError, setExpenseDeleteError] = useState<string | null>(null);
 
   // ── Member modal state ───────────────────────────────────────────────────────
   const [memberModal, setMemberModal] = useState(false);
@@ -91,232 +85,130 @@ const GroupDetail = () => {
   }, [id, loadPaymentHistory]);
 
   // ── Guard ────────────────────────────────────────────────────────────────────
-  if (!group)
-    return (
-      <div className="page-content">
-        <div className="empty-state">
-          <div className="empty-icon">🔍</div>
-          <h3>Group not found</h3>
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate('/groups')}
-          >
-            Back to Groups
-          </button>
-        </div>
-      </div>
-    );
+  const isLoading = groupsStatus === 'loading' || groupsStatus === 'idle'
+    || expensesStatus === 'loading' || expensesStatus === 'idle';
 
-  const groupExpenses = expenses.filter((e) => e.groupId === id);
+  if (isLoading && !group) return <PageLoader message="Loading group…" />;
+
+  if (!group) return (
+    <div className="page-content">
+      <div className="empty-state">
+        <div className="empty-icon">🔍</div>
+        <h3>Group not found</h3>
+        <button className="btn btn-primary" onClick={() => navigate('/groups')}>Back to Groups</button>
+      </div>
+    </div>
+  );
+
+  const groupExpenses = expenses.filter(e => e.groupId === id);
   const total = groupExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-  const memberBalances = group.members.map((m) => {
-    const paid = groupExpenses
-      .filter((e) => e.paidBy === m.id)
-      .reduce((s, e) => s + e.amount, 0);
+  const memberBalances = group.members.map(m => {
+    const paid = groupExpenses.filter(e => e.paidBy === m.id).reduce((s, e) => s + e.amount, 0);
     const share = groupExpenses.reduce((s, e) => {
-      const split = e.splits.find((sp) => sp.memberId === m.id);
+      const split = e.splits.find(sp => sp.memberId === m.id);
       return s + (split?.amount ?? 0);
     }, 0);
     let net = 0;
     for (const e of groupExpenses) {
       const isPayer = e.paidBy === m.id;
       for (const split of e.splits) {
-        const remaining = split.paid
-          ? 0
-          : split.amount - (split.paidAmount ?? 0);
-        if (split.memberId === m.id) {
-          if (!isPayer) net -= remaining;
-        } else if (isPayer) {
-          net += remaining;
-        }
+        const remaining = split.paid ? 0 : split.amount - (split.paidAmount ?? 0);
+        if (split.memberId === m.id) { if (!isPayer) net -= remaining; }
+        else if (isPayer) { net += remaining; }
       }
     }
-    return {
-      id: m.id,
-      name: m.name,
-      avatar: m.avatar,
-      email: m.email,
-      paid,
-      share,
-      net,
-    };
+    return { id: m.id, name: m.name, avatar: m.avatar, email: m.email, paid, share, net };
   });
 
   const simplified = group.simplifyDebts
     ? simplifyDebts(memberBalances)
-    : groupExpenses.flatMap((expense) =>
+    : groupExpenses.flatMap(expense =>
         expense.splits
-          .filter((s) => !s.paid && s.memberId !== expense.paidBy)
-          .map((s) => ({
-            fromId: s.memberId,
-            fromName: s.memberName,
-            toId: expense.paidBy,
-            toName: expense.paidByName,
+          .filter(s => !s.paid && s.memberId !== expense.paidBy)
+          .map(s => ({
+            fromId: s.memberId, fromName: s.memberName,
+            toId: expense.paidBy, toName: expense.paidByName,
             amount: s.amount - (s.paidAmount ?? 0),
           }))
-          .filter((t) => t.amount > 0.01)
+          .filter(t => t.amount > 0.01)
       );
 
-  const selfMember = group.members.find(
-    (m) => !!user?.id && !!m.userId && m.userId === user.id
-  );
-  const youOwe = simplified
-    .filter((t) => t.fromId === selfMember?.id)
-    .reduce((s, t) => s + t.amount, 0);
-  const owedToYou = simplified
-    .filter((t) => t.toId === selfMember?.id)
-    .reduce((s, t) => s + t.amount, 0);
+  const selfMember = group.members.find(m => !!user?.id && !!m.userId && m.userId === user.id);
+  const youOwe = simplified.filter(t => t.fromId === selfMember?.id).reduce((s, t) => s + t.amount, 0);
+  const owedToYou = simplified.filter(t => t.toId === selfMember?.id).reduce((s, t) => s + t.amount, 0);
 
   // ── Existing members pool (from other groups) ────────────────────────────────
-  const currentGroupUserIds = new Set(
-    group.members.map((m) => m.userId).filter(Boolean)
-  );
-  const currentGroupEmails = new Set(
-    group.members
-      .filter((m) => !m.userId && m.email)
-      .map((m) => m.email.toLowerCase())
-  );
-  const currentGroupMobiles = new Set(
-    group.members
-      .filter((m) => !m.userId && m.mobile)
-      .map((m) => m.mobile!.trim())
-  );
-  const existingPool: {
-    id: string;
-    name: string;
-    email: string;
-    mobile?: string;
-    avatar: string;
-    userId: string | null;
-  }[] = [];
+  const currentGroupUserIds = new Set(group.members.map(m => m.userId).filter(Boolean));
+  const currentGroupEmails = new Set(group.members.filter(m => !m.userId && m.email).map(m => m.email.toLowerCase()));
+  const currentGroupMobiles = new Set(group.members.filter(m => !m.userId && m.mobile).map(m => m.mobile!.trim()));
+  const existingPool: { id: string; name: string; email: string; mobile?: string; avatar: string; userId: string | null }[] = [];
   const seenKeys = new Set<string>();
-  groups.forEach((g) => {
+  groups.forEach(g => {
     if (g.id === group.id) return;
-    g.members.forEach((m) => {
-      const dedupKey =
-        m.userId ??
-        (m.email ? `email:${m.email.toLowerCase()}` : null) ??
-        (m.mobile ? `mobile:${m.mobile.trim()}` : null);
+    g.members.forEach(m => {
+      const dedupKey = m.userId ?? (m.email ? `email:${m.email.toLowerCase()}` : null) ?? (m.mobile ? `mobile:${m.mobile.trim()}` : null);
       if (!dedupKey || seenKeys.has(dedupKey)) return;
       const alreadyInGroup = m.userId
         ? currentGroupUserIds.has(m.userId)
-        : m.email
-        ? currentGroupEmails.has(m.email.toLowerCase())
-        : m.mobile
-        ? currentGroupMobiles.has(m.mobile.trim())
-        : false;
+        : (m.email ? currentGroupEmails.has(m.email.toLowerCase()) : (m.mobile ? currentGroupMobiles.has(m.mobile.trim()) : false));
       if (alreadyInGroup) return;
       seenKeys.add(dedupKey);
-      existingPool.push({
-        id: m.id,
-        name: m.name,
-        email: m.email,
-        mobile: m.mobile,
-        avatar: m.avatar,
-        userId: m.userId ?? null,
-      });
+      existingPool.push({ id: m.id, name: m.name, email: m.email, mobile: m.mobile, avatar: m.avatar, userId: m.userId ?? null });
     });
   });
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleRemoveMember = async (memberId: string, memberName: string) => {
-    const hasUnsettledDebt = groupExpenses.some((e) =>
-      e.splits.some((s) => s.memberId === memberId && !s.paid)
-    );
+    const hasUnsettledDebt = groupExpenses.some(e => e.splits.some(s => s.memberId === memberId && !s.paid));
     if (hasUnsettledDebt) {
-      setRemoveError(
-        `Cannot remove ${memberName} — they have unsettled debts. Settle all their splits first.`
-      );
+      setRemoveError(`Cannot remove ${memberName} — they have unsettled debts. Settle all their splits first.`);
       return;
     }
-    const hasPendingTransactions = simplified.some(
-      (t) => t.fromId === memberId || t.toId === memberId
-    );
+    const hasPendingTransactions = simplified.some(t => t.fromId === memberId || t.toId === memberId);
     if (hasPendingTransactions) {
-      const owes = simplified.some((t) => t.fromId === memberId);
-      const getsBack = simplified.some((t) => t.toId === memberId);
-      const reason =
-        owes && getsBack
-          ? 'they owe money and are owed money by others'
-          : owes
-          ? 'they still owe money to others'
-          : 'others still owe them money';
-      setRemoveError(
-        `Cannot remove ${memberName} — ${reason}. Settle all transactions first.`
-      );
+      const owes = simplified.some(t => t.fromId === memberId);
+      const getsBack = simplified.some(t => t.toId === memberId);
+      const reason = owes && getsBack
+        ? 'they owe money and are owed money by others'
+        : owes ? 'they still owe money to others' : 'others still owe them money';
+      setRemoveError(`Cannot remove ${memberName} — ${reason}. Settle all transactions first.`);
       return;
     }
     setRemoveError(null);
-    try {
-      void removeMember(memberId, group.id);
-    } catch (err) {
-      setRemoveError(
-        err instanceof Error ? err.message : `Failed to remove ${memberName}`
-      );
-    }
+    try { void removeMember(memberId, group.id); }
+    catch (err) { setRemoveError(err instanceof Error ? err.message : `Failed to remove ${memberName}`); }
   };
 
   const handleDeleteExpense = async (expenseId: string) => {
     setExpenseDeleteError(null);
-    try {
-      void deleteExpense(expenseId);
-    } catch (err) {
-      setExpenseDeleteError(
-        err instanceof Error ? err.message : 'Failed to delete expense'
-      );
-    }
+    try { void deleteExpense(expenseId); }
+    catch (err) { setExpenseDeleteError(err instanceof Error ? err.message : 'Failed to delete expense'); }
   };
 
   const handleLeaveGroup = () => {
     if (!selfMember) return;
-    if (youOwe > 0.01) {
-      setLeaveError(
-        'You still owe money in this group. Settle your dues before leaving.'
-      );
-      return;
-    }
-    if (owedToYou > 0.01) {
-      setLeaveError(
-        'Others still owe you money in this group. Collect your dues or write them off before leaving.'
-      );
-      return;
-    }
+    if (youOwe > 0.01) { setLeaveError('You still owe money in this group. Settle your dues before leaving.'); return; }
+    if (owedToYou > 0.01) { setLeaveError('Others still owe you money in this group. Collect your dues or write them off before leaving.'); return; }
     void removeMember(selfMember.id, group.id);
     navigate('/groups');
   };
 
   const handleAddMembers = async (pending: PendingMember[]) => {
-    if (pending.length === 0) {
-      setMemberError('Add at least one member');
-      return;
-    }
+    if (pending.length === 0) { setMemberError('Add at least one member'); return; }
     setMemberAdding(true);
     setMemberError('');
     const errors: string[] = [];
     for (const p of pending) {
       try {
-        await addMember({
-          name: p.name,
-          email: p.email,
-          ...(p.mobile ? { mobile: p.mobile } : {}),
-          avatar: p.avatar,
-          groupId: group.id,
-          userId: p.userId,
-        });
+        await addMember({ name: p.name, email: p.email, ...(p.mobile ? { mobile: p.mobile } : {}), avatar: p.avatar, groupId: group.id, userId: p.userId });
       } catch (err) {
-        errors.push(
-          `${p.name}: ${err instanceof Error ? err.message : 'failed'}`
-        );
+        errors.push(`${p.name}: ${err instanceof Error ? err.message : 'failed'}`);
       }
     }
     setMemberAdding(false);
-    if (errors.length > 0) {
-      setMemberError(errors.join(' · '));
-    } else {
-      setMemberModal(false);
-      setMemberError('');
-    }
+    if (errors.length > 0) { setMemberError(errors.join(' · ')); }
+    else { setMemberModal(false); setMemberError(''); }
   };
 
   const handlePaymentSuccess = async () => {
@@ -327,33 +219,19 @@ const GroupDetail = () => {
     <div className="page-content">
       <div className="page-header">
         <div className="flex items-center gap-3">
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={() => navigate('/groups')}
-          >
-            ← Back
-          </button>
+          <button className="btn btn-outline btn-sm" onClick={() => navigate('/groups')}>← Back</button>
           <div>
             <h1 className="page-title">{group.name}</h1>
-            {group.description && (
-              <p className="page-subtitle">{group.description}</p>
-            )}
+            {group.description && <p className="page-subtitle">{group.description}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2">
           {selfMember && (
-            <button
-              className="btn btn-outline btn-sm"
-              style={{ color: '#ef4444', borderColor: '#ef4444' }}
-              onClick={handleLeaveGroup}
-            >
+            <button className="btn btn-outline btn-sm" style={{ color: '#ef4444', borderColor: '#ef4444' }} onClick={handleLeaveGroup}>
               🚪 Leave Group
             </button>
           )}
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}
-          >
+          <button className="btn btn-primary" onClick={() => navigate(`/expenses/new?groupId=${group.id}`)}>
             + Add Expense
           </button>
         </div>
@@ -362,12 +240,7 @@ const GroupDetail = () => {
       {leaveError && (
         <div className="remove-error-banner mb-4">
           ⚠️ {leaveError}
-          <button
-            className="remove-error-close"
-            onClick={() => setLeaveError(null)}
-          >
-            ✕
-          </button>
+          <button className="remove-error-close" onClick={() => setLeaveError(null)}>✕</button>
         </div>
       )}
 
@@ -390,22 +263,13 @@ const GroupDetail = () => {
       )}
 
       <div className="tabs mb-4">
-        <button
-          className={`tab ${activeTab === 'expenses' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('expenses')}
-        >
+        <button className={`tab ${activeTab === 'expenses' ? 'tab-active' : ''}`} onClick={() => setActiveTab('expenses')}>
           💰 Expenses ({groupExpenses.length})
         </button>
-        <button
-          className={`tab ${activeTab === 'balances' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('balances')}
-        >
+        <button className={`tab ${activeTab === 'balances' ? 'tab-active' : ''}`} onClick={() => setActiveTab('balances')}>
           ⚖️ Balances
         </button>
-        <button
-          className={`tab ${activeTab === 'members' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('members')}
-        >
+        <button className={`tab ${activeTab === 'members' ? 'tab-active' : ''}`} onClick={() => setActiveTab('members')}>
           👥 Members ({group.members.length})
         </button>
       </div>
@@ -430,11 +294,7 @@ const GroupDetail = () => {
           selfMemberId={selfMember?.id}
           simplifyDebts={group.simplifyDebts}
           formatDate={formatDate}
-          onPayClick={(from, to) => {
-            setPaymentFrom(from);
-            setPaymentTo(to);
-            setPaymentModal(true);
-          }}
+          onPayClick={(from, to) => { setPaymentFrom(from); setPaymentTo(to); setPaymentModal(true); }}
         />
       )}
 
@@ -467,10 +327,7 @@ const GroupDetail = () => {
         existingPool={existingPool}
         adding={memberAdding}
         error={memberError}
-        onClose={() => {
-          setMemberModal(false);
-          setMemberError('');
-        }}
+        onClose={() => { setMemberModal(false); setMemberError(''); }}
         onAdd={handleAddMembers}
       />
     </div>

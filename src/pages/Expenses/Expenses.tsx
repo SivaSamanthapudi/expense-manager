@@ -3,10 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useGroups } from '../../context/GroupContext';
 import { useExpenses } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
+import PageLoader from '../../components/shared/PageLoader';
 import { Expense, EXPENSE_CATEGORIES, ExpenseCategory } from '../../types';
-import ReceiptLightbox, {
-  ReceiptItem,
-} from '../../components/receipt/ReceiptLightbox';
+import ReceiptLightbox, { ReceiptItem } from '../../components/receipt/ReceiptLightbox';
 import './Expenses.css';
 
 const formatDate = (dateString: string) => {
@@ -19,21 +18,15 @@ const formatDate = (dateString: string) => {
 };
 
 const CATEGORY_ICONS: Record<ExpenseCategory, string> = {
-  food: '🍔',
-  transport: '🚗',
-  accommodation: '🏨',
-  entertainment: '🎬',
-  utilities: '💡',
-  other: '📦',
+  food: '🍔', transport: '🚗', accommodation: '🏨',
+  entertainment: '🎬', utilities: '💡', other: '📦',
 };
 
-const API_BASE =
-  process.env.REACT_APP_API_BASE_URL?.replace('/api', '') ??
-  'http://localhost:4000';
+const API_BASE = process.env.REACT_APP_API_BASE_URL?.replace('/api', '') ?? 'http://localhost:4000';
 
 const Expenses = () => {
-  const { groups } = useGroups();
-  const { expenses, deleteExpense } = useExpenses();
+  const { groups, status: groupsStatus } = useGroups();
+  const { expenses, deleteExpense, status: expensesStatus } = useExpenses();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -51,16 +44,14 @@ const Expenses = () => {
     try {
       await deleteExpense(id);
     } catch (err) {
-      setDeleteError(
-        err instanceof Error ? err.message : 'Failed to delete expense'
-      );
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete expense');
     }
   };
 
-  const isSelfMember = (m: { userId?: string | null; email?: string; name: string; mobile?: string }) =>
+
+  const isSelfMember = (m: { userId?: string | null; email: string; name: string }) =>
     (user?.id && m.userId && m.userId === user.id) ||
-    (user?.email && m.email && m.email?.toLowerCase() === user.email?.toLowerCase()) ||
-    (user?.mobile && m.mobile && m.mobile?.toLowerCase() === user.mobile?.toLowerCase()) ||
+    (user?.email && m.email && m.email.toLowerCase() === user.email.toLowerCase()) ||
     (m.name.toLowerCase() === user?.name?.toLowerCase());
 
   const canModify = (e: Expense) => {
@@ -69,20 +60,18 @@ const Expenses = () => {
   };
 
 
-
-  const filtered = expenses.filter((e) => {
+  const filtered = expenses.filter(e => {
     if (filterGroup && e.groupId !== filterGroup) return false;
     if (filterCategory && e.category !== filterCategory) return false;
-    if (search && !e.title.toLowerCase().includes(search.toLowerCase()))
-      return false;
+    if (search && !e.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
   const total = filtered.reduce((sum, e) => sum + e.amount, 0);
 
   // Build a flat list of all receipt items across all filtered expenses (multiple per expense)
-  const allReceipts: ReceiptItem[] = filtered.flatMap((e) =>
-    (e.receiptUrls ?? []).map((url) => ({
+  const allReceipts: ReceiptItem[] = filtered.flatMap(e =>
+    (e.receiptUrls ?? []).map(url => ({
       title: e.title,
       url: `${API_BASE}${url}`,
       filename: url.split('/').pop() ?? 'receipt',
@@ -95,83 +84,46 @@ const Expenses = () => {
   let idx = 0;
   for (const e of filtered) {
     const count = (e.receiptUrls ?? []).length;
-    if (count > 0) {
-      receiptIndexMap.set(e.id, idx);
-      idx += count;
-    }
+    if (count > 0) { receiptIndexMap.set(e.id, idx); idx += count; }
   }
 
   const openLightbox = (expenseId: string) => {
     const i = receiptIndexMap.get(expenseId);
-    if (i !== undefined) {
-      setLbIndex(i);
-      setLbOpen(true);
-    }
+    if (i !== undefined) { setLbIndex(i); setLbOpen(true); }
   };
+
+  const isLoading = groupsStatus === 'loading' || groupsStatus === 'idle'
+    || expensesStatus === 'loading' || expensesStatus === 'idle';
+
+  if (isLoading) return <PageLoader message="Loading expenses…" />;
 
   return (
     <div className="page-content">
       <div className="page-header">
         <div>
           <h1 className="page-title">Expenses</h1>
-          <p className="page-subtitle">
-            {filtered.length} expense{filtered.length !== 1 ? 's' : ''} · ₹
-            {total.toLocaleString()} total
-          </p>
+          <p className="page-subtitle">{filtered.length} expense{filtered.length !== 1 ? 's' : ''} · ₹{total.toLocaleString()} total</p>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={() => navigate('/expenses/new')}
-        >
-          + Add Expense
-        </button>
+        <button className="btn btn-primary" onClick={() => navigate('/expenses/new')}>+ Add Expense</button>
       </div>
 
       {deleteError && (
         <div className="remove-error-banner mb-4">
           ⚠️ {deleteError}
-          <button
-            className="remove-error-close"
-            onClick={() => setDeleteError(null)}
-          >
-            ✕
-          </button>
+          <button className="remove-error-close" onClick={() => setDeleteError(null)}>✕</button>
         </div>
       )}
 
       <div className="expense-filters card card-body mb-4">
-        <input
-          className="form-control"
-          placeholder="🔍 Search expenses..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ maxWidth: 260 }}
-        />
-        <select
-          className="form-control"
-          value={filterGroup}
-          onChange={(e) => setFilterGroup(e.target.value)}
-          style={{ maxWidth: 200 }}
-        >
+        <input className="form-control" placeholder="🔍 Search expenses..." value={search}
+          onChange={e => setSearch(e.target.value)} style={{ maxWidth: 260 }} />
+        <select className="form-control" value={filterGroup} onChange={e => setFilterGroup(e.target.value)} style={{ maxWidth: 200 }}>
           <option value="">All Groups</option>
-          {groups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
+          {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
-        <select
-          className="form-control"
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          style={{ maxWidth: 180 }}
-        >
+        <select className="form-control" value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ maxWidth: 180 }}>
           <option value="">All Categories</option>
-          {EXPENSE_CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {CATEGORY_ICONS[c]} {c}
-            </option>
-          ))}
+          {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_ICONS[c]} {c}</option>)}
         </select>
       </div>
 
@@ -181,17 +133,13 @@ const Expenses = () => {
             <div className="empty-icon">💸</div>
             <h3>No expenses found</h3>
             <p>Try adjusting filters or add a new expense</p>
-            <button
-              className="btn btn-primary"
-              onClick={() => navigate('/expenses/new')}
-            >
-              Add Expense
-            </button>
+            <button className="btn btn-primary" onClick={() => navigate('/expenses/new')}>Add Expense</button>
           </div>
         </div>
       ) : (
         <div className="card">
-          <div className="card-body" style={{ padding: 0 }}>
+          {/* Desktop table */}
+          <div className="expenses-table-wrap" style={{ padding: 0 }}>
             <table className="expenses-table">
               <thead>
                 <tr>
@@ -206,102 +154,46 @@ const Expenses = () => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((e) => {
-                  const group = groups.find((g) => g.id === e.groupId);
+                {filtered.map(e => {
+                  const group = groups.find(g => g.id === e.groupId);
                   const allowed = canModify(e);
                   const receipts = e.receiptUrls ?? [];
-
                   return (
                     <tr key={e.id}>
                       <td>
                         <div className="flex items-center gap-3">
-                          <span className="expense-table-icon">
-                            {CATEGORY_ICONS[e.category]}
-                          </span>
+                          <span className="expense-table-icon">{CATEGORY_ICONS[e.category]}</span>
                           <div>
                             <p className="font-semibold text-sm">{e.title}</p>
-                            {e.notes && (
-                              <p className="text-xs text-muted">{e.notes}</p>
-                            )}
+                            {e.notes && <p className="text-xs text-muted">{e.notes}</p>}
                           </div>
                         </div>
                       </td>
-                      <td>
-                        <span className="badge badge-primary">
-                          {group?.name ?? '—'}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="text-sm">{e.paidByName}</span>
-                      </td>
-                      <td>
-                        <span className="text-sm text-muted">
-                          {formatDate(e.date)}
-                        </span>
-                      </td>
+                      <td><span className="badge badge-primary">{group?.name ?? '—'}</span></td>
+                      <td><span className="text-sm">{e.paidByName}</span></td>
+                      <td><span className="text-sm text-muted">{formatDate(e.date)}</span></td>
                       <td>
                         <div className="split-chips">
-                          {e.splits.map((s) => (
-                            <span
-                              key={s.memberId}
-                              className={`split-chip ${
-                                s.paid ? 'split-paid' : 'split-unpaid'
-                              }`}
-                            >
+                          {e.splits.map(s => (
+                            <span key={s.memberId} className={`split-chip ${s.paid ? 'split-paid' : 'split-unpaid'}`}>
                               {s.memberName.split(' ')[0]}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td>
-                        <span className="font-bold">
-                          ₹{e.amount.toLocaleString()}
-                        </span>
-                      </td>
+                      <td><span className="font-bold">₹{e.amount.toLocaleString()}</span></td>
                       <td>
                         {receipts.length > 0 && (
-                          <button
-                            className="receipt-badge"
-                            onClick={() => openLightbox(e.id)}
-                            title={`${receipts.length} attachment${
-                              receipts.length > 1 ? 's' : ''
-                            }`}
-                          >
+                          <button className="receipt-badge" onClick={() => openLightbox(e.id)} title={`${receipts.length} attachment${receipts.length > 1 ? 's' : ''}`}>
                             <span className="receipt-badge-icon">📎</span>
-                            <span className="receipt-badge-label">
-                              {receipts.length === 1
-                                ? receipts[0].split('/').pop() ?? 'receipt'
-                                : `${receipts.length} files`}
-                            </span>
+                            <span className="receipt-badge-label">{receipts.length === 1 ? (receipts[0].split('/').pop() ?? 'receipt') : `${receipts.length} files`}</span>
                           </button>
                         )}
                       </td>
                       <td>
                         <div className="flex gap-2">
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => navigate(`/expenses/edit/${e.id}`)}
-                            disabled={!allowed}
-                            title={
-                              !allowed
-                                ? 'You are not a participant in this expense'
-                                : ''
-                            }
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => handleDelete(e.id)}
-                            disabled={!allowed}
-                            title={
-                              !allowed
-                                ? 'You are not a participant in this expense'
-                                : ''
-                            }
-                          >
-                            Del
-                          </button>
+                          <button className="btn btn-outline btn-sm" onClick={() => navigate(`/expenses/edit/${e.id}`)} disabled={!allowed} title={!allowed ? 'You are not a participant in this expense' : ''}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(e.id)} disabled={!allowed} title={!allowed ? 'You are not a participant in this expense' : ''}>Del</button>
                         </div>
                       </td>
                     </tr>
@@ -309,6 +201,48 @@ const Expenses = () => {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile card list */}
+          <div className="expense-cards card-body">
+            {filtered.map(e => {
+              const group = groups.find(g => g.id === e.groupId);
+              const allowed = canModify(e);
+              const receipts = e.receiptUrls ?? [];
+              return (
+                <div key={e.id} className="expense-card">
+                  <div className="expense-card-top">
+                    <span className="expense-table-icon">{CATEGORY_ICONS[e.category]}</span>
+                    <div className="expense-card-info">
+                      <p className="expense-card-title">{e.title}</p>
+                      <p className="expense-card-meta">
+                        {group?.name ?? '—'} · {e.paidByName} · {formatDate(e.date)}
+                      </p>
+                    </div>
+                    <span className="expense-card-amount">₹{e.amount.toLocaleString()}</span>
+                  </div>
+                  <div className="expense-card-footer">
+                    <div className="split-chips">
+                      {e.splits.map(s => (
+                        <span key={s.memberId} className={`split-chip ${s.paid ? 'split-paid' : 'split-unpaid'}`}>
+                          {s.memberName.split(' ')[0]}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="expense-card-actions">
+                      {receipts.length > 0 && (
+                        <button className="receipt-badge" onClick={() => openLightbox(e.id)}>
+                          <span className="receipt-badge-icon">📎</span>
+                          <span className="receipt-badge-label">{receipts.length === 1 ? (receipts[0].split('/').pop() ?? 'receipt') : `${receipts.length} files`}</span>
+                        </button>
+                      )}
+                      <button className="btn btn-outline btn-sm" onClick={() => navigate(`/expenses/edit/${e.id}`)} disabled={!allowed}>Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(e.id)} disabled={!allowed}>Del</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

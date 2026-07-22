@@ -84,3 +84,17 @@ export interface Expense {
   notes: string;
   receiptUrls?: string[];
 }
+
+export interface ExpenseHistoryChange {
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+export interface ExpenseHistoryEntry {
+  id: string;
+  editedBy: string;
+  editedByName: string;
+  editedAt: string;
+  changes: ExpenseHistoryChange[];
+}

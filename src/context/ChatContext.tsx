@@ -60,7 +60,7 @@ const ChatContext = createContext<ChatContextType | null>(null);
 
 const SOCKET_URL =
   process.env.REACT_APP_API_BASE_URL?.replace('/api', '') ??
-  'http://localhost:4000';
+  'http://localhost:3000';
 
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const { user, status } = useAuth();

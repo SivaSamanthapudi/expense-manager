@@ -6,6 +6,7 @@
   flex-direction: column;
   gap: 10px;
   z-index: 2000;
+  max-width: calc(100vw - 40px);
 }
 
 .chat-toast {
@@ -25,14 +26,8 @@
 }
 
 @keyframes toast-slide-in {
-  from {
-    transform: translateX(120%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+  from { transform: translateX(120%); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
 }
 
 .chat-toast:hover {
@@ -82,4 +77,18 @@
 
 .chat-toast-close:hover {
   color: #e2e8f0;
+}
+
+@media (max-width: 480px) {
+  .chat-toast-container {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    max-width: 100%;
+  }
+  .chat-toast {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
 }

@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import { Expense } from '../types';
+import { Expense, ExpenseHistoryEntry } from '../types';
 
 export const expenseService = {
   async fetchAll(): Promise<Expense[]> {
@@ -35,6 +35,11 @@ export const expenseService = {
 
   async remove(id: string): Promise<void> {
     await apiClient.delete(`/expenses/${id}`);
+  },
+
+  async fetchHistory(id: string): Promise<ExpenseHistoryEntry[]> {
+    const { data } = await apiClient.get<ExpenseHistoryEntry[]>(`/expenses/${id}/history`);
+    return data;
   },
 };
 
