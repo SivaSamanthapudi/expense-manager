@@ -17,7 +17,7 @@ import { initSockets } from './sockets';
 const app = express();
 const httpServer = createServer(app);
 
-const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:4200')
+const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:4201,http://localhost:4200')
   .split(',')
   .map(o => o.trim());
 
@@ -45,7 +45,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
 initSockets(io);
 
-const PORT = parseInt(process.env.PORT ?? '4000', 10);
+const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 connectDB()
   .then(() => {

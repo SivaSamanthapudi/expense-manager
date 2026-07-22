@@ -4,6 +4,7 @@ import fs from 'fs';
 import { Types } from 'mongoose';
 import { Group } from '../models/Group';
 import { Expense } from '../models/Expense';
+import { ExpenseHistory } from '../models/ExpenseHistory';
 import { User } from '../models/User';
 import { AuthRequest } from '../middleware/auth';
 
@@ -29,7 +30,7 @@ const formatExpense = (e: InstanceType<typeof Expense>) => ({
 const getUserGroupIds = async (userId: string): Promise<string[]> => {
   const user = await User.findById(userId).select('email mobile');
   const $or: object[] = [{ createdBy: new Types.ObjectId(userId) }];
-  if (user?.email) $or.push({ 'members.email': user.email });
+  if (user?.email)  $or.push({ 'members.email':  user.email });
   if (user?.mobile) $or.push({ 'members.mobile': user.mobile });
   const groups = await Group.find({ $or }).select('_id');
   return groups.map((g) => g._id.toString());
@@ -42,52 +43,30 @@ const deleteFiles = (urls: string[]) => {
   }
 };
 
-export const getExpenses = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const getExpenses = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const groupIds = await getUserGroupIds(req.userId!);
-    const expenses = await Expense.find({ groupId: { $in: groupIds } }).sort({
-      date: -1,
-    });
+    const expenses = await Expense.find({ groupId: { $in: groupIds } }).sort({ date: -1 });
     res.json(expenses.map(formatExpense));
   } catch {
     res.status(500).json({ error: 'Server error' });
   }
 };
 
-export const createExpense = async (
-  req: MulterRequest & AuthRequest,
-  res: Response
-): Promise<void> => {
+export const createExpense = async (req: MulterRequest & AuthRequest, res: Response): Promise<void> => {
   try {
-    const {
-      groupId,
-      title,
-      amount,
-      category,
-      paidBy,
-      paidByName,
-      splits,
-      date,
-      notes,
-    } = req.body as {
-      groupId: string;
-      title: string;
-      amount: number;
-      category?: string;
-      paidBy: string;
-      paidByName: string;
-      splits?: Array<{
-        memberId: string;
-        memberName: string;
+    const { groupId, title, amount, category, paidBy, paidByName, splits, date, notes } =
+      req.body as {
+        groupId: string;
+        title: string;
         amount: number;
-        paid: boolean;
-      }>;
-      date: string;
-      notes?: string;
-    };
+        category?: string;
+        paidBy: string;
+        paidByName: string;
+        splits?: Array<{ memberId: string; memberName: string; amount: number; paid: boolean }>;
+        date: string;
+        notes?: string;
+      };
 
     // Any group member can create an expense in that group
     const groupIds = await getUserGroupIds(req.userId!);
@@ -102,12 +81,9 @@ export const createExpense = async (
     }
 
     const uploadedFiles = (req.files as Express.Multer.File[]) ?? [];
-    const receiptUrls = uploadedFiles.map(
-      (f) => `/uploads/receipts/${f.filename}`
-    );
+    const receiptUrls = uploadedFiles.map((f) => `/uploads/receipts/${f.filename}`);
 
-    const parsedSplits =
-      typeof splits === 'string' ? JSON.parse(splits) : splits;
+    const parsedSplits = typeof splits === 'string' ? JSON.parse(splits) : splits;
 
     const expense = await Expense.create({
       groupId,
@@ -129,10 +105,25 @@ export const createExpense = async (
   }
 };
 
-export const updateExpense = async (
-  req: MulterRequest & AuthRequest,
-  res: Response
-): Promise<void> => {
+const TRACKED_FIELDS = ['title', 'amount', 'category', 'paidBy', 'paidByName', 'date', 'notes', 'splits', 'receiptUrls'] as const;
+type TrackedField = typeof TRACKED_FIELDS[number];
+
+function diffExpense(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+): { field: string; oldValue: unknown; newValue: unknown }[] {
+  const diffs: { field: string; oldValue: unknown; newValue: unknown }[] = [];
+  for (const field of TRACKED_FIELDS) {
+    const oldVal = before[field];
+    const newVal = after[field];
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+      diffs.push({ field, oldValue: oldVal, newValue: newVal });
+    }
+  }
+  return diffs;
+}
+
+export const updateExpense = async (req: MulterRequest & AuthRequest, res: Response): Promise<void> => {
   try {
     const expense = await Expense.findById(req.params.id);
     if (!expense) {
@@ -147,11 +138,22 @@ export const updateExpense = async (
       return;
     }
 
+    // Snapshot before mutation for diff
+    const beforeSnapshot: Record<string, unknown> = {
+      title: expense.title,
+      amount: expense.amount,
+      category: expense.category,
+      paidBy: expense.paidBy,
+      paidByName: expense.paidByName,
+      date: expense.date,
+      notes: expense.notes,
+      splits: expense.splits.map(s => ({ memberId: s.memberId, memberName: s.memberName, amount: s.amount, paid: s.paid })),
+      receiptUrls: [...expense.receiptUrls],
+    };
+
     // URLs to keep (sent by client as JSON array string)
     const keepUrlsRaw = req.body.keepReceiptUrls as string | undefined;
-    const keepUrls: string[] = keepUrlsRaw
-      ? JSON.parse(keepUrlsRaw)
-      : expense.receiptUrls;
+    const keepUrls: string[] = keepUrlsRaw ? JSON.parse(keepUrlsRaw) : expense.receiptUrls;
 
     // Delete files that were removed (in existing but not in keepUrls)
     const toDelete = expense.receiptUrls.filter((u) => !keepUrls.includes(u));
@@ -163,12 +165,7 @@ export const updateExpense = async (
 
     expense.receiptUrls = [...keepUrls, ...newUrls];
 
-    const {
-      keepReceiptUrls: _k,
-      receiptUrls: _r,
-      splits: rawSplits,
-      ...rest
-    } = req.body as {
+    const { keepReceiptUrls: _k, receiptUrls: _r, splits: rawSplits, ...rest } = req.body as {
       keepReceiptUrls?: string;
       receiptUrls?: unknown;
       splits?: string;
@@ -176,23 +173,77 @@ export const updateExpense = async (
     };
 
     if (rawSplits) {
-      rest.splits =
-        typeof rawSplits === 'string' ? JSON.parse(rawSplits) : rawSplits;
+      rest.splits = typeof rawSplits === 'string' ? JSON.parse(rawSplits) : rawSplits;
     }
 
     Object.assign(expense, rest);
     await expense.save();
+
+    // Build after snapshot from saved doc
+    const afterSnapshot: Record<string, unknown> = {
+      title: expense.title,
+      amount: expense.amount,
+      category: expense.category,
+      paidBy: expense.paidBy,
+      paidByName: expense.paidByName,
+      date: expense.date,
+      notes: expense.notes,
+      splits: expense.splits.map(s => ({ memberId: s.memberId, memberName: s.memberName, amount: s.amount, paid: s.paid })),
+      receiptUrls: [...expense.receiptUrls],
+    };
+
+    const changes = diffExpense(beforeSnapshot, afterSnapshot);
+    if (changes.length > 0) {
+      const editor = await User.findById(req.userId).select('name');
+      await ExpenseHistory.create({
+        expenseId: expense._id,
+        editedBy: req.userId!,
+        editedByName: editor?.name ?? 'Unknown',
+        editedAt: new Date(),
+        changes,
+      });
+    }
+
     res.json(formatExpense(expense));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Failed to create expense';
+    const msg = err instanceof Error ? err.message : 'Failed to update expense';
     res.status(500).json({ error: msg });
   }
 };
 
-export const deleteExpense = async (
-  req: AuthRequest,
-  res: Response
-): Promise<void> => {
+export const getExpenseHistory = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const expense = await Expense.findById(req.params.id).select('groupId');
+    if (!expense) {
+      res.status(404).json({ error: 'Expense not found' });
+      return;
+    }
+
+    const groupIds = await getUserGroupIds(req.userId!);
+    if (!groupIds.includes(expense.groupId.toString())) {
+      res.status(403).json({ error: 'You are not a member of this group' });
+      return;
+    }
+
+    const history = await ExpenseHistory.find({ expenseId: req.params.id })
+      .sort({ editedAt: -1 })
+      .limit(50);
+
+    res.json(
+      history.map(h => ({
+        id: h._id.toString(),
+        editedBy: h.editedBy,
+        editedByName: h.editedByName,
+        editedAt: h.editedAt,
+        changes: h.changes,
+      }))
+    );
+  } catch {
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+export const deleteExpense = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const expense = await Expense.findById(req.params.id);
     if (!expense) {
